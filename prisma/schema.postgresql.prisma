@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(cuid())
+  name        String
+  avatar      String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  events        CalendarEvent[]      @relation("UserEvents")
+  createdEvents CalendarEvent[]      @relation("EventCreator")
+  eventTypes    EventType[]
+  colorSettings DayColorSetting[]
+  shareLinks    ShareLink[]
+
+  ownedCalendars CalendarMembership[] @relation("OwnedCalendars")
+  memberships   CalendarMembership[] @relation("MemberOf")
+}
+
+model CalendarEvent {
+  id          String    @id @default(cuid())
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime?
+  allDay      Boolean   @default(true)
+  eventTypeId String?
+  userId      String
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  eventType   EventType? @relation(fields: [eventTypeId], references: [id], onDelete: SetNull)
+  user        User       @relation("UserEvents", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy   User?      @relation("EventCreator", fields: [createdById], references: [id], onDelete: SetNull)
+}
+
+model EventType {
+  id        String          @id @default(cuid())
+  name      String
+  shape     String
+  color     String
+  symbol    String          @default("")
+  sortOrder Int             @default(0)
+  userId    String
+  events    CalendarEvent[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  date      String
+  name      String
+  type      String
+  year      Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date])
+}
+
+model DayColorSetting {
+  id        String   @id @default(cuid())
+  dayType   String
+  color     String
+  label     String
+  sortOrder Int      @default(0)
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dayType])
+}
+
+model ShareLink {
+  id          String    @id @default(cuid())
+  token       String    @unique @default(cuid())
+  userId      String
+  name        String    @default("分享链接")
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CalendarMembership {
+  id              String   @id @default(cuid())
+  calendarUserId  String
+  memberUserId    String
+  role            String   @default("viewer")
+  createdAt       DateTime @default(now())
+
+  calendarUser    User     @relation("OwnedCalendars", fields: [calendarUserId], references: [id], onDelete: Cascade)
+  memberUser      User     @relation("MemberOf", fields: [memberUserId], references: [id], onDelete: Cascade)
+
+  @@unique([calendarUserId, memberUserId])
+}
