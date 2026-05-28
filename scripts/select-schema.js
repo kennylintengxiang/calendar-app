@@ -3,12 +3,13 @@
 /**
  * 自动检测 DATABASE_URL 并选择对应的 Prisma Schema
  * 
+ * 在 Vercel 构建时，Vercel 会先运行 npm install（触发 postinstall），
+ * 然后运行 npm run build。此脚本需要在这两个阶段都能正常工作。
+ * 
  * 规则：
  * - DATABASE_URL 以 "file:" 开头 → 使用 SQLite schema
  * - DATABASE_URL 以 "postgresql://" 或 "postgres://" 开头 → 使用 PostgreSQL schema
  * - 未配置 → 默认使用 SQLite
- * 
- * 如果源 schema 文件不存在，则保留现有 schema.prisma 不做修改
  */
 
 const fs = require('fs');
@@ -37,27 +38,27 @@ function main() {
   const provider = detectProvider();
   const sourcePath = provider === 'postgresql' ? postgresqlSchemaPath : sqliteSchemaPath;
   
-  if (!fs.existsSync(sourcePath)) {
-    // Source schema file doesn't exist - check if schema.prisma already exists
-    if (fs.existsSync(schemaPath)) {
-      console.log(`⚠️ 源 schema 文件不存在 (${path.basename(sourcePath)})，保留现有 schema.prisma`);
-      return;
-    }
-    // No schema.prisma either - this is a fatal error
-    console.error(`❌ 没有可用的 Prisma schema 文件！`);
-    process.exit(1);
+  // Try to copy from source schema file
+  if (fs.existsSync(sourcePath)) {
+    const content = fs.readFileSync(sourcePath, 'utf-8');
+    fs.writeFileSync(schemaPath, content, 'utf-8');
+    const dbType = provider === 'postgresql' ? 'PostgreSQL (Supabase)' : 'SQLite (本地)';
+    console.log(`[select-schema] ✅ 已选择数据库: ${dbType}`);
+    console.log(`[select-schema]    Schema: schema.${provider}.prisma → schema.prisma`);
+    return;
   }
 
-  // Read source schema
-  const content = fs.readFileSync(sourcePath, 'utf-8');
-  
-  // Write to schema.prisma
-  fs.writeFileSync(schemaPath, content, 'utf-8');
-  
-  const dbType = provider === 'postgresql' ? 'PostgreSQL (Supabase)' : 'SQLite (本地)';
-  console.log(`✅ 已选择数据库: ${dbType}`);
-  console.log(`   DATABASE_URL: ${databaseUrl ? databaseUrl.substring(0, 30) + '...' : '(未配置)'}`);
-  console.log(`   Schema: schema.${provider}.prisma → schema.prisma`);
+  // Source file doesn't exist - check if schema.prisma already exists (e.g. committed to git)
+  if (fs.existsSync(schemaPath)) {
+    console.log(`[select-schema] ⚠️ 源文件 ${path.basename(sourcePath)} 不存在，使用现有 schema.prisma`);
+    return;
+  }
+
+  // Neither source nor schema.prisma exists - this is fatal
+  console.error(`[select-schema] ❌ 没有可用的 Prisma schema 文件！`);
+  console.error(`[select-schema]    缺少: ${sourcePath}`);
+  console.error(`[select-schema]    缺少: ${schemaPath}`);
+  process.exit(1);
 }
 
 main();
