@@ -7,6 +7,8 @@
  * - DATABASE_URL 以 "file:" 开头 → 使用 SQLite schema
  * - DATABASE_URL 以 "postgresql://" 或 "postgres://" 开头 → 使用 PostgreSQL schema
  * - 未配置 → 默认使用 SQLite
+ * 
+ * 如果源 schema 文件不存在，则保留现有 schema.prisma 不做修改
  */
 
 const fs = require('fs');
@@ -18,7 +20,7 @@ const sqliteSchemaPath = path.join(prismaDir, 'schema.sqlite.prisma');
 const postgresqlSchemaPath = path.join(prismaDir, 'schema.postgresql.prisma');
 
 const databaseUrl = process.env.DATABASE_URL || '';
-const forceProvider = process.env.DB_PROVIDER || ''; // 允许强制指定: sqlite 或 postgresql
+const forceProvider = process.env.DB_PROVIDER || '';
 
 function detectProvider() {
   if (forceProvider === 'sqlite') return 'sqlite';
@@ -36,14 +38,20 @@ function main() {
   const sourcePath = provider === 'postgresql' ? postgresqlSchemaPath : sqliteSchemaPath;
   
   if (!fs.existsSync(sourcePath)) {
-    console.error(`❌ Schema 文件不存在: ${sourcePath}`);
+    // Source schema file doesn't exist - check if schema.prisma already exists
+    if (fs.existsSync(schemaPath)) {
+      console.log(`⚠️ 源 schema 文件不存在 (${path.basename(sourcePath)})，保留现有 schema.prisma`);
+      return;
+    }
+    // No schema.prisma either - this is a fatal error
+    console.error(`❌ 没有可用的 Prisma schema 文件！`);
     process.exit(1);
   }
 
-  // 读取源 schema 内容
+  // Read source schema
   const content = fs.readFileSync(sourcePath, 'utf-8');
   
-  // 写入到 schema.prisma
+  // Write to schema.prisma
   fs.writeFileSync(schemaPath, content, 'utf-8');
   
   const dbType = provider === 'postgresql' ? 'PostgreSQL (Supabase)' : 'SQLite (本地)';

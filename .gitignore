@@ -1,5 +1,3 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
 # dependencies
 node_modules
 /.pnp
@@ -30,7 +28,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files
 .env*
 
 # vercel
@@ -52,22 +50,19 @@ server.log
 # Skills directory (not needed for deployment)
 /skills/
 
-# Upload directory (临时上传文件)
+# Upload directory
 /upload/
 
-# Database files
+# Database files (SQLite is local only)
 *.db
 *.db-journal
-
-# Prisma schema files - schema.prisma MUST be committed for Vercel build to work!
-# scripts/select-schema.js overwrites it during build based on DATABASE_URL
-# prisma/schema.prisma  <-- DO NOT ignore this file!
 
 # Sandbox-only files (不需要部署到 Vercel)
 /examples/
 /download/
 /bg-server.sh
 /keep-alive.sh
+/keep-dev-alive.sh
 /supervisor.sh
 /run-dev.sh
 /launch-dev.sh
