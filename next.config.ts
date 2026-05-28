@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  /* config options here */
+  // ⚠️ "standalone" output is for Docker/self-hosted only.
+  // Vercel has its own deployment system — removing it fixes 502/500 errors.
+  // output: "standalone",
   typescript: {
     ignoreBuildErrors: true,
   },

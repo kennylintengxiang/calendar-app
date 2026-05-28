@@ -73,3 +73,5 @@ prisma/schema.prisma
 /.zscripts/
 /Caddyfile
 /worklog.md
+/mini-services/
+/DEPLOY_GUIDE.md

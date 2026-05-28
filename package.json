@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "node scripts/select-schema.js && prisma generate && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",
+    "build": "node scripts/select-schema.js && prisma generate && next build",
+    "start": "next start",
     "lint": "eslint .",
     "db:select": "node scripts/select-schema.js",
     "db:push": "node scripts/select-schema.js && prisma db push",
@@ -13,14 +13,14 @@
     "db:migrate": "node scripts/select-schema.js && prisma migrate dev",
     "db:reset": "node scripts/select-schema.js && prisma migrate reset",
     "db:switch:sqlite": "DB_PROVIDER=sqlite node scripts/select-schema.js && prisma generate && prisma db push",
-    "db:switch:pg": "DB_PROVIDER=postgresql node scripts/select-schema.js && prisma generate && prisma db push"
+    "db:switch:pg": "DB_PROVIDER=postgresql node scripts/select-schema.js && prisma generate && prisma db push",
+    "postinstall": "node scripts/select-schema.js && prisma generate"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^5.1.1",
-    "@mdxeditor/editor": "^3.39.1",
     "@prisma/client": "^6.11.1",
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.14",

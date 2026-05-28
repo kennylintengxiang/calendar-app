@@ -1,6 +1,6 @@
 # 日历应用 - Vercel + Supabase 部署教程
 
-> 零基础也能跟着做，每一步都有截图说明
+> 零基础也能跟着做，每一步都有说明
 
 ---
 
@@ -31,6 +31,8 @@
 ### 1.3 上传代码
 1. 把你电脑上的项目文件夹拖到 GitHub 页面上
 2. 或者用 Git 命令推送（如果你会用 Git）
+
+> ⚠️ **重要**：确保 `.gitignore` 文件存在且包含 `node_modules/`, `.next/`, `*.db`, `skills/`, `upload/` 等条目，否则代码会超过 GitHub 限制！
 
 ---
 
@@ -86,7 +88,7 @@
 
 ### 3.4 开始部署
 1. 点击 **"Deploy"** 按钮
-2. 等待 2-3 分钟
+2. 等待 2-5 分钟
 3. 看到 🎉 庆祝画面 = 部署成功！
 
 ### 3.5 访问你的应用
@@ -99,16 +101,117 @@ https://calendar-app-xxxxx.vercel.app
 
 ---
 
-## 第四步：初始化数据库
+## 第四步：初始化数据库（重要！）
 
-第一次部署后，数据库是空的，需要初始化：
+部署成功后，数据库表还是空的。你需要在 Supabase 中创建表：
 
-1. 打开你的应用网址
-2. 应用会自动创建默认用户和示例数据
-3. 如果没有自动创建，在浏览器地址栏访问：
-   ```
-   https://你的网址/api/init
-   ```
+### 方法一：通过 Vercel 本地命令（推荐）
+1. 安装 Vercel CLI：`npm i -g vercel`
+2. 在项目目录运行：`vercel link`（连接到你的 Vercel 项目）
+3. 拉取环境变量：`vercel env pull .env.local`
+4. 运行数据库推送：`npx prisma db push`
+
+### 方法二：通过 Supabase SQL Editor
+1. 打开 Supabase 项目 → **SQL Editor**
+2. 复制以下 SQL 并执行：
+
+```sql
+CREATE TABLE "User" (
+  "id" TEXT PRIMARY KEY DEFAULT (cuid()),
+  "name" TEXT NOT NULL,
+  "avatar" TEXT NOT NULL DEFAULT '',
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE "CalendarEvent" (
+  "id" TEXT PRIMARY KEY DEFAULT (cuid()),
+  "title" TEXT NOT NULL,
+  "description" TEXT,
+  "startDate" TIMESTAMP NOT NULL,
+  "endDate" TIMESTAMP,
+  "allDay" BOOLEAN NOT NULL DEFAULT TRUE,
+  "eventTypeId" TEXT,
+  "userId" TEXT NOT NULL,
+  "createdById" TEXT,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE "EventType" (
+  "id" TEXT PRIMARY KEY DEFAULT (cuid()),
+  "name" TEXT NOT NULL,
+  "shape" TEXT NOT NULL,
+  "color" TEXT NOT NULL,
+  "symbol" TEXT NOT NULL DEFAULT '',
+  "sortOrder" INTEGER NOT NULL DEFAULT 0,
+  "userId" TEXT NOT NULL,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE "Holiday" (
+  "id" TEXT PRIMARY KEY DEFAULT (cuid()),
+  "date" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "type" TEXT NOT NULL,
+  "year" INTEGER NOT NULL,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE "DayColorSetting" (
+  "id" TEXT PRIMARY KEY DEFAULT (cuid()),
+  "dayType" TEXT NOT NULL,
+  "color" TEXT NOT NULL,
+  "label" TEXT NOT NULL,
+  "sortOrder" INTEGER NOT NULL DEFAULT 0,
+  "userId" TEXT NOT NULL,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE "ShareLink" (
+  "id" TEXT PRIMARY KEY DEFAULT (cuid()),
+  "token" TEXT NOT NULL UNIQUE DEFAULT (cuid()),
+  "userId" TEXT NOT NULL,
+  "name" TEXT NOT NULL DEFAULT '分享链接',
+  "expiresAt" TIMESTAMP,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE "CalendarMembership" (
+  "id" TEXT PRIMARY KEY DEFAULT (cuid()),
+  "calendarUserId" TEXT NOT NULL,
+  "memberUserId" TEXT NOT NULL,
+  "role" TEXT NOT NULL DEFAULT 'viewer',
+  "createdAt" TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Foreign keys
+ALTER TABLE "CalendarEvent" ADD CONSTRAINT "CalendarEvent_eventTypeId_fkey" FOREIGN KEY ("eventTypeId") REFERENCES "EventType"("id") ON DELETE SET NULL;
+ALTER TABLE "CalendarEvent" ADD CONSTRAINT "CalendarEvent_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE;
+ALTER TABLE "CalendarEvent" ADD CONSTRAINT "CalendarEvent_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "User"("id") ON DELETE SET NULL;
+ALTER TABLE "EventType" ADD CONSTRAINT "EventType_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE;
+ALTER TABLE "DayColorSetting" ADD CONSTRAINT "DayColorSetting_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE;
+ALTER TABLE "ShareLink" ADD CONSTRAINT "ShareLink_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE;
+ALTER TABLE "CalendarMembership" ADD CONSTRAINT "CalendarMembership_calendarUserId_fkey" FOREIGN KEY ("calendarUserId") REFERENCES "User"("id") ON DELETE CASCADE;
+ALTER TABLE "CalendarMembership" ADD CONSTRAINT "CalendarMembership_memberUserId_fkey" FOREIGN KEY ("memberUserId") REFERENCES "User"("id") ON DELETE CASCADE;
+
+-- Unique constraints
+ALTER TABLE "EventType" ADD CONSTRAINT "EventType_userId_name_key" UNIQUE ("userId", "name");
+ALTER TABLE "Holiday" ADD CONSTRAINT "Holiday_date_key" UNIQUE ("date");
+ALTER TABLE "DayColorSetting" ADD CONSTRAINT "DayColorSetting_userId_dayType_key" UNIQUE ("userId", "dayType");
+ALTER TABLE "CalendarMembership" ADD CONSTRAINT "CalendarMembership_calendarUserId_memberUserId_key" UNIQUE ("calendarUserId", "memberUserId");
+
+-- Indexes for performance
+CREATE INDEX "CalendarEvent_userId_idx" ON "CalendarEvent"("userId");
+CREATE INDEX "CalendarEvent_startDate_idx" ON "CalendarEvent"("startDate");
+CREATE INDEX "Holiday_year_idx" ON "Holiday"("year");
+```
+
+### 方法三：自动初始化
+打开浏览器访问你的应用，首次加载时会自动创建默认用户和数据。
 
 ---
 
@@ -123,6 +226,9 @@ https://calendar-app-xxxxx.vercel.app
 
 ## ❓ 常见问题
 
+### Q: 部署成功但页面打不开/显示500错误？
+**最常见原因**：数据库表没有创建。请按照「第四步：初始化数据库」操作。
+
 ### Q: 部署失败怎么办？
 检查 Vercel 的构建日志（Build Log），看具体报错信息。最常见的原因是 `DATABASE_URL` 配置错误。
 
@@ -130,10 +236,12 @@ https://calendar-app-xxxxx.vercel.app
 1. 确认 Supabase 项目状态是 "Active"
 2. 确认连接地址中的密码正确
 3. 确认连接地址没有多余的空格
+4. 确认使用的是 **URI 格式**（以 `postgresql://` 开头）
 
 ### Q: 分享链接打不开？
 1. 确认你用的是 Vercel 分配的公网地址
 2. 确认对方网络可以访问该地址
+3. 确认数据库中有用户数据（先初始化）
 
 ### Q: 想换回 SQLite？
 在 Vercel 的环境变量中删除 `DATABASE_URL`，或者改回 `file:./db/custom.db`，然后重新部署。
