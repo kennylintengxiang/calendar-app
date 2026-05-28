@@ -44,11 +44,11 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/holidays
- * Fetch latest Chinese holidays from the web and store in database.
+ * Fetch latest Chinese holidays and store in database.
  * Body: { year: number }
  *
- * Uses z-ai-web-dev-sdk for web search and LLM parsing.
- * Falls back to hardcoded data if web search fails.
+ * In sandbox: uses z-ai-web-dev-sdk for web search and LLM parsing.
+ * On Vercel: falls back to hardcoded holiday data.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -65,25 +65,31 @@ export async function POST(request: NextRequest) {
     let holidayData: Array<{ date: string; name: string; type: string; year: number }>;
 
     try {
-      // Use z-ai-web-dev-sdk for web search and LLM parsing
-      const ZAI = (await import('z-ai-web-dev-sdk')).default;
-      const zai = await ZAI.create();
+      // Try to use z-ai-web-dev-sdk (only available in sandbox environment)
+      let zai: any = null;
+      try {
+        const ZAI = (await import('z-ai-web-dev-sdk')).default;
+        zai = await ZAI.create();
+      } catch {
+        console.warn('z-ai-web-dev-sdk not available, using hardcoded holiday data');
+      }
 
-      // Search for Chinese holiday schedule
-      const searchQuery = `中国${year}年放假安排`;
-      const searchResults = await zai.functions.invoke('web_search', {
-        query: searchQuery,
-        num: 10
-      });
+      if (zai) {
+        // Search for Chinese holiday schedule
+        const searchQuery = `中国${year}年放假安排`;
+        const searchResults = await zai.functions.invoke('web_search', {
+          query: searchQuery,
+          num: 10
+        });
 
-      // Use LLM to parse the search results into structured holiday data
-      const searchContext = searchResults
-        .map((r: { name?: string; snippet?: string }) =>
-          `${r.name || ''}: ${r.snippet || ''}`
-        )
-        .join('\n');
+        // Use LLM to parse the search results into structured holiday data
+        const searchContext = searchResults
+          .map((r: { name?: string; snippet?: string }) =>
+            `${r.name || ''}: ${r.snippet || ''}`
+          )
+          .join('\n');
 
-      const prompt = `Based on the following search results about Chinese holiday schedule for ${year}, extract all holiday dates and makeup workday dates into a structured JSON array.
+        const prompt = `Based on the following search results about Chinese holiday schedule for ${year}, extract all holiday dates and makeup workday dates into a structured JSON array.
 
 Rules:
 - Each entry should have: date (YYYY-MM-DD format), name (Chinese holiday name), type ("holiday" for days off, "workday" for makeup/调休 days), year (${year})
@@ -97,37 +103,32 @@ ${searchContext}
 Return ONLY a valid JSON array, no other text. Example format:
 [{"date":"${year}-01-01","name":"元旦","type":"holiday","year":${year}}]`;
 
-      const completion = await zai.chat.completions.create({
-        messages: [
-          {
-            role: 'assistant',
-            content: 'You are a data extraction assistant. Return only valid JSON arrays as instructed, with no additional text or markdown formatting.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        thinking: { type: 'disabled' }
-      });
-      const llmResponse = completion.choices[0]?.message?.content || '';
+        const completion = await zai.chat.completions.create({
+          messages: [
+            {
+              role: 'assistant',
+              content: 'You are a data extraction assistant. Return only valid JSON arrays as instructed, with no additional text or markdown formatting.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          thinking: { type: 'disabled' }
+        });
+        const llmResponse = completion.choices[0]?.message?.content || '';
 
-      // Parse the LLM response - extract JSON from the response
-      let parsedData: Array<{ date: string; name: string; type: string; year: number }>;
-      try {
-        // Try to extract JSON from the response (might be wrapped in markdown code blocks)
+        // Parse the LLM response - extract JSON from the response
         const jsonMatch = llmResponse.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
-          parsedData = JSON.parse(jsonMatch[0]);
+          holidayData = JSON.parse(jsonMatch[0]);
         } else {
           throw new Error('No JSON array found in LLM response');
         }
-      } catch {
-        console.warn('Failed to parse LLM response, falling back to hardcoded data');
-        parsedData = getHardcodedHolidays(year);
+      } else {
+        // No z-ai-web-dev-sdk available, use hardcoded data
+        holidayData = getHardcodedHolidays(year);
       }
-
-      holidayData = parsedData;
     } catch (sdkError) {
       console.warn('Web search/LLM failed, falling back to hardcoded data:', sdkError);
       holidayData = getHardcodedHolidays(year);
