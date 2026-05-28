@@ -8,7 +8,7 @@
     "vercel-build": "node scripts/select-schema.js && npx prisma generate && npx prisma db push && next build",
     "start": "next start",
     "lint": "eslint .",
-    "postinstall": "node scripts/select-schema.js && npx prisma generate",
+    "postinstall": "npx prisma generate || echo 'prisma generate skipped'",
     "db:select": "node scripts/select-schema.js",
     "db:push": "node scripts/select-schema.js && npx prisma db push",
     "db:generate": "node scripts/select-schema.js && npx prisma generate",
@@ -74,7 +74,7 @@
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^11.1.0",
-    "vaul": "^1.2.1",
+    "vaul": "^1.1.2",
     "xlsx": "^0.18.5",
     "zod": "^4.0.2",
     "zustand": "^5.0.6"

@@ -71,3 +71,6 @@ server.log
 /worklog.md
 /mini-services/
 /DEPLOY_GUIDE.md
+
+# Bun lock file (Vercel 用 npm)
+bun.lock
