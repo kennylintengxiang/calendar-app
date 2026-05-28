@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
     "build": "node scripts/select-schema.js && npx prisma generate && next build",
-    "vercel-build": "node scripts/select-schema.js && npx prisma generate && npx prisma db push && next build",
+    "vercel-build": "node scripts/select-schema.js && npx prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
     "postinstall": "npx prisma generate || echo 'prisma generate skipped'",
