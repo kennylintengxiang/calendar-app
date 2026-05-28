@@ -12,7 +12,13 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { userId } = body;
 
-    let user = null;
+    let user: {
+      id: string;
+      name: string;
+      avatar: string;
+      createdAt: Date;
+      updatedAt: Date;
+    } | null = null;
 
     // If userId provided, find that user
     if (userId) {
