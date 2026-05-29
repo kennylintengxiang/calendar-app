@@ -25,6 +25,17 @@ import { format } from 'date-fns'
 import { Trash2 } from 'lucide-react'
 
 function serializeEventFromApi(e: Record<string, unknown>): CalendarEvent {
+  const eventEntities = (e.eventEntities as Array<Record<string, unknown>>) || []
+  const entities: { id: string; name: string; sortOrder: number }[] = eventEntities.map((ee) => {
+    const ent = ee.entity as Record<string, unknown>
+    return {
+      id: (ent?.id || ee.entityId) as string,
+      name: (ent?.name || '') as string,
+      sortOrder: ((ent?.sortOrder as number) || 0),
+    }
+  }).filter((ent) => ent.id && ent.name)
+  const entityIds = entities.map((ent) => ent.id)
+
   return {
     id: e.id as string,
     title: e.title as string,
@@ -39,7 +50,10 @@ function serializeEventFromApi(e: Record<string, unknown>): CalendarEvent {
       shape: (e.eventType as Record<string, unknown>).shape as string,
       color: (e.eventType as Record<string, unknown>).color as string,
       symbol: ((e.eventType as Record<string, unknown>).symbol as string) || '',
+      sortOrder: ((e.eventType as Record<string, unknown>).sortOrder as number) || 0,
     } : null,
+    entityIds,
+    entities,
   }
 }
 

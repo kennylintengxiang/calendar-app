@@ -44,11 +44,15 @@ export function UserSwitcher() {
   }
 
   const handleSwitch = async (userId: string) => {
-    if (userId === currentUser?.id) return
+    if (userId === currentUser?.id) {
+      setIsOpen(false)
+      return
+    }
+    // Close popover FIRST for immediate visual feedback
+    setIsOpen(false)
     try {
       await switchUser(userId)
       toast({ title: '已切换用户' })
-      setIsOpen(false)
     } catch {
       toast({ title: '切换失败', variant: 'destructive' })
     }

@@ -13,7 +13,10 @@ import { SettingsDialog } from './SettingsDialog'
 import { ShareDialog } from './ShareDialog'
 import { CollaborationDialog } from './CollaborationDialog'
 import { ImportDialog } from './ImportDialog'
+import { ExportDialog } from './ExportDialog'
+import { LoginDialog } from './LoginDialog'
 import { UserSwitcher } from './UserSwitcher'
+import { SharedUserSwitcher } from './SharedUserSwitcher'
 import { Legend } from './Legend'
 import { Button } from '@/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
@@ -32,6 +35,9 @@ import {
   Eye,
   X,
   PanelRight,
+  LogIn,
+  LogOut,
+  Shield,
 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
@@ -52,11 +58,17 @@ export function CalendarApp() {
     initialize,
     openSettingsDialog,
     openImportDialog,
+    openExportDialog,
     events,
     isReadOnly,
     sharedCalendarOwner,
+    sharedUsers,
+    sharedCurrentUserId,
     exitReadOnly,
     currentUser,
+    isAuthenticated,
+    openLoginDialog,
+    logout,
     isLegendOpen,
     toggleLegend,
   } = useCalendarStore()
@@ -118,28 +130,12 @@ export function CalendarApp() {
     fetchHolidays(year)
   }, [currentDate, currentView, isInitialized])
 
-  const handleExport = async () => {
+  const handleLogout = async () => {
     try {
-      const year = currentDate.getFullYear()
-      const userId = currentUser?.id || ''
-      const res = await fetch(`/api/export?start=${year}-01-01&end=${year}-12-31${userId ? `&userId=${userId}` : ''}`)
-      if (res.ok) {
-        const blob = await res.blob()
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `calendar-${year}.ics`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
-        toast({ title: '导出成功', description: `日历已导出为 ICS 文件，可导入 Outlook` })
-      } else {
-        const data = await res.json()
-        toast({ title: '导出失败', description: data.error || '没有可导出的事件', variant: 'destructive' })
-      }
+      await logout()
+      toast({ title: '已退出登录', description: '您仍可查看日历，编辑时需重新登录' })
     } catch {
-      toast({ title: '导出失败', description: '网络错误', variant: 'destructive' })
+      toast({ title: '退出失败', variant: 'destructive' })
     }
   }
 
@@ -163,6 +159,8 @@ export function CalendarApp() {
     }
   }
 
+  const currentSharedUserName = sharedUsers.find(u => u.id === sharedCurrentUserId)?.name || sharedCalendarOwner?.name || '他人'
+
   if (!isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -181,7 +179,7 @@ export function CalendarApp() {
         <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-1.5 flex items-center justify-center gap-2">
           <Eye className="h-3.5 w-3.5 text-amber-600" />
           <span className="text-xs text-amber-700 font-medium">
-            只读模式 — 正在查看 {sharedCalendarOwner?.name || '他人'}的日历
+            只读模式 — 正在查看 {currentSharedUserName}的日历
           </span>
           <Button
             variant="ghost"
@@ -199,11 +197,18 @@ export function CalendarApp() {
       <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-30">
         <div className="flex items-center justify-between px-3 sm:px-4 py-2">
           <div className="flex items-center gap-2">
-            {!isReadOnly && <UserSwitcher />}
+            {isReadOnly ? <SharedUserSwitcher /> : <UserSwitcher />}
             <Calendar className="h-5 w-5 text-primary" />
             <h1 className="text-lg font-bold hidden sm:inline">
-              {isReadOnly ? `${sharedCalendarOwner?.name || '他人'}的日历` : '日历'}
+              {isReadOnly ? `${currentSharedUserName}的日历` : '日历'}
             </h1>
+            {/* Auth status indicator */}
+            {!isReadOnly && isAuthenticated && (
+              <span className="text-[10px] text-muted-foreground hidden sm:inline flex items-center gap-0.5">
+                <Shield className="h-3 w-3 text-green-600" />
+                已登录
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">
@@ -279,8 +284,8 @@ export function CalendarApp() {
               </select>
             </div>
 
-            {/* Share button */}
-            {!isReadOnly && (
+            {/* Share button - only show when authenticated */}
+            {!isReadOnly && isAuthenticated && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -292,8 +297,8 @@ export function CalendarApp() {
               </Button>
             )}
 
-            {/* Collaboration button */}
-            {!isReadOnly && (
+            {/* Collaboration button - only show when authenticated */}
+            {!isReadOnly && isAuthenticated && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -318,12 +323,12 @@ export function CalendarApp() {
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              onClick={handleExport}
-              title="导出到Outlook日历"
+              onClick={openExportDialog}
+              title="导出日历"
             >
               <Download className="h-4 w-4" />
             </Button>
-            {!isReadOnly && (
+            {!isReadOnly && isAuthenticated && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -333,6 +338,30 @@ export function CalendarApp() {
               >
                 <Settings className="h-4 w-4" />
               </Button>
+            )}
+            {/* Auth button */}
+            {!isReadOnly && (
+              isAuthenticated ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleLogout}
+                  title="退出登录"
+                >
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={openLoginDialog}
+                  title="登录"
+                >
+                  <LogIn className="h-4 w-4" />
+                </Button>
+              )
             )}
             {/* Mobile legend toggle */}
             <MobileLegendToggle />
@@ -349,7 +378,7 @@ export function CalendarApp() {
           {currentView === 'year' && <YearView />}
         </div>
 
-        {/* Legend sidebar - always visible on md+, toggleable on mobile */}
+        {/* Legend sidebar */}
         <div className="hidden md:block">
           <Legend />
         </div>
@@ -363,7 +392,7 @@ export function CalendarApp() {
         <div className="flex items-center justify-between text-xs text-muted-foreground">
           <span>
             {isReadOnly
-              ? `只读模式 · ${sharedCalendarOwner?.name || '他人'}的日历`
+              ? `只读模式 · ${currentSharedUserName}的日历`
               : `中国日历 · 支持法定节假日 · 可导出Outlook`}
           </span>
           <span>{events.length} 个事件</span>
@@ -376,6 +405,8 @@ export function CalendarApp() {
       <ShareDialog />
       <CollaborationDialog />
       <ImportDialog />
+      <ExportDialog />
+      <LoginDialog />
     </div>
   )
 }
@@ -404,12 +435,10 @@ function MobileLegendOverlay() {
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/30 z-40 md:hidden"
         onClick={toggleLegend}
       />
-      {/* Legend panel */}
       <div className="fixed right-0 top-0 bottom-0 z-50 md:hidden animate-in slide-in-from-right duration-200">
         <Legend />
       </div>

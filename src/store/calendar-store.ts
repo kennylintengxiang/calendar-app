@@ -11,6 +11,12 @@ export interface CalendarEventType {
   sortOrder: number
 }
 
+export interface Entity {
+  id: string
+  name: string
+  sortOrder: number
+}
+
 export interface CalendarEvent {
   id: string
   title: string
@@ -20,6 +26,8 @@ export interface CalendarEvent {
   allDay: boolean
   eventTypeId?: string | null
   eventType?: CalendarEventType | null
+  entityIds: string[]
+  entities: Entity[]
 }
 
 export interface Holiday {
@@ -60,6 +68,13 @@ export interface CalendarMembership {
   role: 'viewer' | 'editor'
   calendarUser?: CalendarUser
   memberUser?: CalendarUser
+}
+
+export interface AuthAccount {
+  id: string
+  username: string
+  role: string
+  users: Array<{ id: string; name: string; avatar: string }>
 }
 
 const CURRENT_USER_KEY = 'calendar-current-user-id'
@@ -128,6 +143,15 @@ interface CalendarState {
   fetchHolidays: (year: number) => Promise<void>
   refreshHolidays: (year: number) => Promise<void>
 
+  // Entities
+  entities: Entity[]
+  setEntities: (entities: Entity[]) => void
+  fetchEntities: () => Promise<void>
+  addEntity: (name: string) => Promise<void>
+  updateEntity: (id: string, data: { name?: string }) => Promise<void>
+  deleteEntity: (id: string) => Promise<void>
+  reorderEntities: (items: Array<{ id: string; sortOrder: number }>) => Promise<void>
+
   // Color settings
   colorSettings: DayColorSetting[]
   setColorSettings: (settings: DayColorSetting[]) => void
@@ -182,7 +206,10 @@ interface CalendarState {
   isReadOnly: boolean
   shareToken: string | null
   sharedCalendarOwner: CalendarUser | null
-  fetchSharedCalendar: (token: string) => Promise<void>
+  sharedUsers: CalendarUser[]
+  sharedCurrentUserId: string | null
+  fetchSharedCalendar: (token: string, userId?: string) => Promise<void>
+  switchSharedUser: (userId: string) => Promise<void>
   exitReadOnly: () => Promise<void>
 
   // Collaboration
@@ -196,6 +223,24 @@ interface CalendarState {
   isImportDialogOpen: boolean
   openImportDialog: () => void
   closeImportDialog: () => void
+
+  // Export dialog
+  isExportDialogOpen: boolean
+  openExportDialog: () => void
+  closeExportDialog: () => void
+
+  // Login dialog (deferred auth)
+  isLoginDialogOpen: boolean
+  openLoginDialog: () => void
+  closeLoginDialog: () => void
+
+  // Auth state
+  isAuthenticated: boolean
+  authAccount: AuthAccount | null
+  checkAuth: () => Promise<void>
+  login: (username: string, password: string) => Promise<AuthAccount | null>
+  setup: (username: string, password: string, displayName?: string) => Promise<AuthAccount | null>
+  logout: () => Promise<void>
 
   // Import calendar
   importCalendar: (userId: string, fileType: 'ics' | 'json' | 'csv' | 'excel', content: string) => Promise<{ imported: number; skipped: number; eventTypesMatched: number; eventTypesCreated: number; errors: string[] }>
@@ -212,6 +257,18 @@ interface CalendarState {
 }
 
 function serializeEvent(e: Record<string, unknown>): CalendarEvent {
+  // eventEntities is the junction table from API: [{ id, eventId, entityId, entity: { id, name, sortOrder } }]
+  const eventEntities = (e.eventEntities as Array<Record<string, unknown>>) || []
+  const entities: Entity[] = eventEntities.map((ee) => {
+    const ent = ee.entity as Record<string, unknown>
+    return {
+      id: (ent?.id || ee.entityId) as string,
+      name: (ent?.name || '') as string,
+      sortOrder: ((ent?.sortOrder as number) || 0),
+    }
+  }).filter((ent) => ent.id && ent.name)
+  const entityIds = entities.map((ent) => ent.id)
+
   return {
     id: e.id as string,
     title: e.title as string,
@@ -226,7 +283,10 @@ function serializeEvent(e: Record<string, unknown>): CalendarEvent {
       shape: (e.eventType as Record<string, unknown>).shape as string,
       color: (e.eventType as Record<string, unknown>).color as string,
       symbol: ((e.eventType as Record<string, unknown>).symbol as string) || '',
+      sortOrder: ((e.eventType as Record<string, unknown>).sortOrder as number) || 0,
     } : null,
+    entityIds,
+    entities,
   }
 }
 
@@ -305,13 +365,17 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
   fetchEvents: async (start, end) => {
     try {
-      const { isReadOnly, shareToken, currentUser } = get()
+      const { isReadOnly, shareToken, sharedCurrentUserId, currentUser } = get()
       const params = new URLSearchParams()
       if (start) params.set('start', start)
       if (end) params.set('end', end)
-      if (!isReadOnly && currentUser?.id) {
+      // In read-only mode, use sharedCurrentUserId to filter events
+      if (isReadOnly && sharedCurrentUserId) {
+        params.set('userId', sharedCurrentUserId)
+      } else if (!isReadOnly && currentUser?.id) {
         params.set('userId', currentUser.id)
       }
+      // Share token for API validation (if needed)
       if (isReadOnly && shareToken) {
         params.set('shareToken', shareToken)
       }
@@ -331,13 +395,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   setEventTypes: (types) => set({ eventTypes: types }),
   fetchEventTypes: async () => {
     try {
-      const { isReadOnly, shareToken, currentUser } = get()
+      const { isReadOnly, sharedCurrentUserId, currentUser } = get()
       const params = new URLSearchParams()
-      if (!isReadOnly && currentUser?.id) {
+      if (isReadOnly && sharedCurrentUserId) {
+        params.set('userId', sharedCurrentUserId)
+      } else if (!isReadOnly && currentUser?.id) {
         params.set('userId', currentUser.id)
-      }
-      if (isReadOnly && shareToken) {
-        params.set('shareToken', shareToken)
       }
       const qs = params.toString()
       const res = await fetch(`/api/settings/event-types${qs ? `?${qs}` : ''}`)
@@ -397,18 +460,113 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     }
   },
 
+  // Entities
+  entities: [],
+  setEntities: (entities) => set({ entities }),
+  fetchEntities: async () => {
+    try {
+      const { isReadOnly, sharedCurrentUserId, currentUser } = get()
+      let userId = ''
+      if (isReadOnly && sharedCurrentUserId) {
+        userId = sharedCurrentUserId
+      } else if (!isReadOnly && currentUser?.id) {
+        userId = currentUser.id
+      } else return
+      const res = await fetch(`/api/settings/entities?userId=${userId}`)
+      if (res.ok) {
+        const data = await res.json()
+        const entities = (data.entities || data || []).map((e: Record<string, unknown>) => ({
+          id: e.id as string,
+          name: e.name as string,
+          sortOrder: (e.sortOrder as number) || 0,
+        }))
+        set({ entities })
+      }
+    } catch (e) {
+      console.error('Failed to fetch entities:', e)
+    }
+  },
+  addEntity: async (name) => {
+    try {
+      const { currentUser } = get()
+      if (!currentUser) return
+      const res = await fetch('/api/settings/entities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, userId: currentUser.id }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const entity = data.entity || data
+        set((s) => ({ entities: [...s.entities, { id: entity.id, name: entity.name, sortOrder: entity.sortOrder || 0 }] }))
+      }
+    } catch (e) {
+      console.error('Failed to add entity:', e)
+    }
+  },
+  updateEntity: async (id, data) => {
+    try {
+      const res = await fetch('/api/settings/entities', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, ...data }),
+      })
+      if (res.ok) {
+        const responseData = await res.json()
+        const updated = responseData.entity || responseData
+        set((s) => ({
+          entities: s.entities.map((e) => (e.id === id ? { ...e, ...updated } : e)),
+        }))
+      }
+    } catch (e) {
+      console.error('Failed to update entity:', e)
+    }
+  },
+  deleteEntity: async (id) => {
+    try {
+      const { currentUser } = get()
+      const res = await fetch(`/api/settings/entities?id=${id}${currentUser?.id ? `&userId=${currentUser.id}` : ''}`, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        set((s) => ({ entities: s.entities.filter((e) => e.id !== id) }))
+      }
+    } catch (e) {
+      console.error('Failed to delete entity:', e)
+    }
+  },
+  reorderEntities: async (items) => {
+    try {
+      const { currentUser } = get()
+      const res = await fetch('/api/settings/entities/reorder', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items, userId: currentUser?.id }),
+      })
+      if (res.ok) {
+        set((s) => ({
+          entities: s.entities.map((e) => {
+            const item = items.find((i) => i.id === e.id)
+            return item ? { ...e, sortOrder: item.sortOrder } : e
+          }).sort((a, b) => a.sortOrder - b.sortOrder),
+        }))
+      }
+    } catch (e) {
+      console.error('Failed to reorder entities:', e)
+    }
+  },
+
   // Color settings
   colorSettings: [],
   setColorSettings: (settings) => set({ colorSettings: settings }),
   fetchColorSettings: async () => {
     try {
-      const { isReadOnly, shareToken, currentUser } = get()
+      const { isReadOnly, sharedCurrentUserId, currentUser } = get()
       const params = new URLSearchParams()
-      if (!isReadOnly && currentUser?.id) {
+      if (isReadOnly && sharedCurrentUserId) {
+        params.set('userId', sharedCurrentUserId)
+      } else if (!isReadOnly && currentUser?.id) {
         params.set('userId', currentUser.id)
-      }
-      if (isReadOnly && shareToken) {
-        params.set('shareToken', shareToken)
       }
       const qs = params.toString()
       const res = await fetch(`/api/settings/colors${qs ? `?${qs}` : ''}`)
@@ -485,9 +643,6 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
             sortOrder: (newSetting.sortOrder as number) || 0,
           }],
         }))
-      } else {
-        const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || '添加失败')
       }
     } catch (e) {
       console.error('Failed to add color setting:', e)
@@ -504,7 +659,6 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         body: JSON.stringify({ items, userId: currentUser?.id }),
       })
       if (res.ok) {
-        // Update local state
         set((s) => ({
           colorSettings: s.colorSettings.map((cs) => {
             const item = items.find((i) => i.id === cs.id)
@@ -522,9 +676,17 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   editingEvent: null,
   selectedDate: null,
   openEventDialog: (date, event) => {
-    const { isReadOnly } = get()
+    const { isReadOnly, isAuthenticated } = get()
     // In read-only mode, only allow viewing event details (no creation/editing)
     if (isReadOnly && !event) return
+    // If not authenticated and not in read-only mode, require login for editing
+    if (!isReadOnly && !isAuthenticated && !event) {
+      get().openLoginDialog()
+      return
+    }
+    if (!isReadOnly && !isAuthenticated && event) {
+      // Viewing is OK, but mark as read-only in the dialog
+    }
     set({
       isEventDialogOpen: true,
       selectedDate: date,
@@ -622,7 +784,6 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         const remaining = users.filter((u) => u.id !== id)
         set({ users: remaining })
 
-        // If we deleted the current user, switch to another
         if (currentUser?.id === id) {
           if (remaining.length > 0) {
             await get().switchUser(remaining[0].id)
@@ -665,6 +826,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       await Promise.all([
         get().fetchColorSettings(),
         get().fetchEventTypes(),
+        get().fetchEntities(),
         get().fetchHolidays(year),
         get().fetchEvents(),
         get().fetchShareLinks(),
@@ -743,13 +905,20 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   isReadOnly: false,
   shareToken: null,
   sharedCalendarOwner: null,
+  sharedUsers: [],
+  sharedCurrentUserId: null,
 
-  fetchSharedCalendar: async (token) => {
+  fetchSharedCalendar: async (token, userId) => {
     try {
-      const res = await fetch(`/api/share/${token}`)
+      const url = userId
+        ? `/api/share/${token}?userId=${userId}`
+        : `/api/share/${token}`
+      const res = await fetch(url)
       if (res.ok) {
         const data = await res.json()
         const owner = data.owner ? serializeUser(data.owner as Record<string, unknown>) : null
+        const sharedUsers = (data.users || []).map((u: Record<string, unknown>) => serializeUser(u))
+        const sharedCurrentUserId = (data.currentUserId as string) || null
         const events = (data.events || []).map(serializeEvent)
         const eventTypes = (data.eventTypes || []).map((t: Record<string, unknown>) => ({
           id: t.id as string,
@@ -767,20 +936,34 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
           sortOrder: (s.sortOrder as number) || 0,
         }))
         const holidays = data.holidays || []
+        const entities = (data.entities || []).map((e: Record<string, unknown>) => ({
+          id: e.id as string,
+          name: e.name as string,
+          sortOrder: (e.sortOrder as number) || 0,
+        }))
 
         set({
           isReadOnly: true,
           shareToken: token,
           sharedCalendarOwner: owner,
+          sharedUsers,
+          sharedCurrentUserId,
           events,
           eventTypes,
           colorSettings,
           holidays,
+          entities,
         })
       }
     } catch (e) {
       console.error('Failed to fetch shared calendar:', e)
     }
+  },
+
+  switchSharedUser: async (userId) => {
+    const { shareToken } = get()
+    if (!shareToken) return
+    await get().fetchSharedCalendar(shareToken, userId)
   },
 
   exitReadOnly: async () => {
@@ -789,7 +972,20 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       isReadOnly: false,
       shareToken: null,
       sharedCalendarOwner: null,
+      sharedUsers: [],
+      sharedCurrentUserId: null,
     })
+    // Clean up URL - remove share parameter
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.has('share')) {
+        params.delete('share')
+        const newUrl = params.toString()
+          ? `${window.location.pathname}?${params.toString()}`
+          : window.location.pathname
+        window.history.replaceState({}, '', newUrl)
+      }
+    }
     // Re-fetch current user's data
     if (currentUser) {
       await get().initForUser(currentUser.id)
@@ -876,12 +1072,129 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   },
 
   // =====================
-  // =====================
   // Import dialog
   // =====================
   isImportDialogOpen: false,
   openImportDialog: () => set({ isImportDialogOpen: true }),
   closeImportDialog: () => set({ isImportDialogOpen: false }),
+
+  // =====================
+  // Export dialog
+  // =====================
+  isExportDialogOpen: false,
+  openExportDialog: () => set({ isExportDialogOpen: true }),
+  closeExportDialog: () => set({ isExportDialogOpen: false }),
+
+  // =====================
+  // Login dialog (deferred auth)
+  // =====================
+  isLoginDialogOpen: false,
+  openLoginDialog: () => set({ isLoginDialogOpen: true }),
+  closeLoginDialog: () => set({ isLoginDialogOpen: false }),
+
+  // =====================
+  // Auth state
+  // =====================
+  isAuthenticated: false,
+  authAccount: null,
+
+  checkAuth: async () => {
+    try {
+      const res = await fetch('/api/auth/session')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.authenticated && data.account) {
+          set({
+            isAuthenticated: true,
+            authAccount: data.account,
+          })
+          // Sync users from auth account
+          if (data.account.users) {
+            const authUsers = data.account.users.map((u: Record<string, unknown>) => serializeUser(u))
+            const { users } = get()
+            // If store users are empty, set them from auth
+            if (users.length === 0) {
+              set({ users: authUsers })
+            }
+          }
+        } else {
+          set({ isAuthenticated: false, authAccount: null })
+        }
+      }
+    } catch {
+      set({ isAuthenticated: false, authAccount: null })
+    }
+  },
+
+  login: async (username, password) => {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const account = data.account as AuthAccount
+        set({ isAuthenticated: true, authAccount: account, isLoginDialogOpen: false })
+        // Sync users
+        if (account.users) {
+          const authUsers = account.users.map((u: Record<string, unknown>) => serializeUser(u))
+          set({ users: authUsers })
+          // Set current user to first user if none set
+          const { currentUser } = get()
+          if (!currentUser && authUsers.length > 0) {
+            get().setCurrentUser(authUsers[0])
+            await get().initForUser(authUsers[0].id)
+          }
+        }
+        return account
+      }
+      return null
+    } catch {
+      return null
+    }
+  },
+
+  setup: async (username, password, displayName) => {
+    try {
+      const res = await fetch('/api/auth/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, displayName }),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        const account = data.account as AuthAccount
+        set({ isAuthenticated: true, authAccount: account, isLoginDialogOpen: false })
+        // Sync users from setup
+        if (account.users) {
+          const authUsers = account.users.map((u: Record<string, unknown>) => serializeUser(u))
+          set({ users: authUsers })
+          if (authUsers.length > 0) {
+            get().setCurrentUser(authUsers[0])
+            await get().initForUser(authUsers[0].id)
+          }
+        }
+        return account
+      }
+      return null
+    } catch {
+      return null
+    }
+  },
+
+  logout: async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+      set({
+        isAuthenticated: false,
+        authAccount: null,
+      })
+    } catch {
+      // ignore
+    }
+  },
 
   // =====================
   // Import calendar
@@ -894,7 +1207,6 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     })
     if (res.ok) {
       const result = await res.json()
-      // Refresh events and event types after import
       await Promise.all([
         get().fetchEvents(),
         get().fetchEventTypes(),
@@ -917,7 +1229,6 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         body: JSON.stringify({ items, userId: currentUser?.id }),
       })
       if (res.ok) {
-        // Update local state
         set((s) => ({
           eventTypes: s.eventTypes.map((et) => {
             const item = items.find((i) => i.id === et.id)
@@ -946,15 +1257,18 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         return
       }
 
-      // Step 2: Fetch all users
+      // Step 2: Check auth in background (non-blocking)
+      get().checkAuth()
+
+      // Step 3: Fetch all users (no auth required for reading)
       await get().fetchUsers()
       const { users } = get()
 
-      // Step 3: If no users exist, create a default user
+      // Step 4: If no users exist, create a default user
       if (users.length === 0) {
         await get().createUser('默认用户')
       } else {
-        // Step 4: Try to restore from localStorage
+        // Try to restore from localStorage
         const savedUserId = getSavedUserId()
         const targetUser = savedUserId
           ? users.find((u) => u.id === savedUserId)

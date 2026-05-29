@@ -4,8 +4,8 @@ import { generateICS } from '@/lib/ics';
 
 /**
  * GET /api/export
- * Export events as ICS file for Outlook import
- * Query params: start, end for date range
+ * Export events as ICS file for Outlook/Google Calendar import
+ * Query params: start, end, userId for date range
  */
 export async function GET(request: NextRequest) {
   try {
@@ -39,6 +39,11 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         eventType: true,
+        eventEntities: {
+          include: {
+            entity: true,
+          },
+        },
       },
       orderBy: {
         startDate: 'asc',
@@ -52,15 +57,35 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Map to ICS event format
-    const icsEvents = events.map((event) => ({
-      title: event.title,
-      description: event.description || undefined,
-      startDate: event.startDate,
-      endDate: event.endDate || undefined,
-      allDay: event.allDay,
-      uid: `${event.id}@chinese-calendar`,
-    }));
+    // Map to ICS event format with entity names in title
+    const icsEvents = events.map((event) => {
+      // Build title: eventName-remark(entity1、entity2)
+      let title = event.title;
+      const remark = event.description?.trim();
+      const entityNames = event.eventEntities
+        .map((ee) => ee.entity?.name)
+        .filter(Boolean);
+
+      if (remark || entityNames.length > 0) {
+        let suffix = '';
+        if (remark) {
+          suffix = `-${remark}`;
+        }
+        if (entityNames.length > 0) {
+          suffix += `（${entityNames.join('、')}）`;
+        }
+        title = `${event.title}${suffix}`;
+      }
+
+      return {
+        title,
+        description: event.description || undefined,
+        startDate: event.startDate,
+        endDate: event.endDate || undefined,
+        allDay: event.allDay,
+        uid: `${event.id}@chinese-calendar`,
+      };
+    });
 
     const icsContent = generateICS(icsEvents);
 

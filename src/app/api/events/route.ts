@@ -67,6 +67,11 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         eventType: true,
+        eventEntities: {
+          include: {
+            entity: true,
+          },
+        },
       },
       orderBy: {
         startDate: 'asc',
@@ -136,6 +141,11 @@ export async function POST(request: NextRequest) {
       },
       include: {
         eventType: true,
+        eventEntities: {
+          include: {
+            entity: true,
+          },
+        },
       },
     });
 
