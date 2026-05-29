@@ -588,13 +588,16 @@ function ColorSettingsSection() {
 }
 
 function EntitySection() {
-  const { entities, currentUser, reorderEntities, addEntity, deleteEntity } = useCalendarStore()
+  const { entities, currentUser, reorderEntities, addEntity, deleteEntity, updateEntity } = useCalendarStore()
   const [isAdding, setIsAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [localOrder, setLocalOrder] = useState<Entity[]>([])
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  // Inline editing for entity names
+  const [editNames, setEditNames] = useState<Record<string, string>>({})
+  const [savingId, setSavingId] = useState<string | null>(null)
   const { toast } = useToast()
 
   // Sort entities by sortOrder and sync local order
@@ -605,6 +608,13 @@ function EntitySection() {
   React.useEffect(() => {
     setLocalOrder(sortedEntities)
   }, [sortedEntities])
+
+  // Sync edit names from entities
+  React.useEffect(() => {
+    const names: Record<string, string> = {}
+    entities.forEach((e) => { names[e.id] = e.name })
+    setEditNames(names)
+  }, [entities])
 
   const handleAdd = async () => {
     if (!newName.trim() || isSubmitting) return
@@ -643,6 +653,32 @@ function EntitySection() {
     } catch (e) {
       console.error('Failed to delete entity:', e)
       toast({ title: '删除失败', description: '网络错误', variant: 'destructive' })
+    }
+  }
+
+  const handleSaveName = async (id: string) => {
+    const newNameVal = editNames[id]?.trim()
+    if (!newNameVal || savingId) return
+
+    const entity = entities.find((e) => e.id === id)
+    if (!entity || entity.name === newNameVal) return
+
+    // Check for duplicate
+    const duplicate = entities.some((e) => e.id !== id && e.name.toLowerCase() === newNameVal.toLowerCase())
+    if (duplicate) {
+      toast({ title: '修改失败', description: `主体"${newNameVal}"已存在`, variant: 'destructive' })
+      return
+    }
+
+    setSavingId(id)
+    try {
+      await updateEntity(id, { name: newNameVal })
+      toast({ title: '保存成功' })
+    } catch (e) {
+      console.error('Failed to update entity:', e)
+      toast({ title: '保存失败', description: '网络错误', variant: 'destructive' })
+    } finally {
+      setSavingId(null)
     }
   }
 
@@ -746,57 +782,76 @@ function EntitySection() {
         </div>
       )}
 
-      <p className="text-[11px] text-muted-foreground">拖拽或使用箭头按钮调整主体显示顺序</p>
+      <p className="text-[11px] text-muted-foreground">拖拽或使用箭头按钮调整主体显示顺序，点击名称可直接修改</p>
 
       <div className="space-y-1">
-        {localOrder.map((entity, index) => (
-          <div
-            key={entity.id}
-            draggable
-            onDragStart={(e) => handleDragStart(e, entity.id)}
-            onDragOver={(e) => handleDragOver(e, entity.id)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, entity.id)}
-            onDragEnd={handleDragEnd}
-            className={cn(
-              'flex items-center gap-2 p-1.5 rounded transition-all',
-              dragId === entity.id && 'opacity-50 scale-95',
-              dragOverId === entity.id && dragId !== entity.id && 'border-t-2 border-primary',
-              'hover:bg-muted/50 cursor-grab active:cursor-grabbing'
-            )}
-          >
-            {/* Drag handle */}
-            <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-
-            {/* Move up/down buttons */}
-            <div className="flex flex-col gap-0.5">
-              <button
-                className="p-0 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
-                onClick={() => handleMoveUp(index)}
-                disabled={index === 0}
-              >
-                <ChevronUp className="h-3 w-3" />
-              </button>
-              <button
-                className="p-0 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
-                onClick={() => handleMoveDown(index)}
-                disabled={index === localOrder.length - 1}
-              >
-                <ChevronDown className="h-3 w-3" />
-              </button>
-            </div>
-
-            <span className="text-sm flex-1">{entity.name}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-muted-foreground hover:text-destructive"
-              onClick={() => handleDelete(entity.id)}
+        {localOrder.map((entity, index) => {
+          const editName = editNames[entity.id] ?? entity.name
+          const hasNameChange = editName.trim() !== entity.name && editName.trim().length > 0
+          return (
+            <div
+              key={entity.id}
+              draggable
+              onDragStart={(e) => handleDragStart(e, entity.id)}
+              onDragOver={(e) => handleDragOver(e, entity.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, entity.id)}
+              onDragEnd={handleDragEnd}
+              className={cn(
+                'flex items-center gap-2 p-1.5 rounded transition-all',
+                dragId === entity.id && 'opacity-50 scale-95',
+                dragOverId === entity.id && dragId !== entity.id && 'border-t-2 border-primary',
+                'hover:bg-muted/50 cursor-grab active:cursor-grabbing'
+              )}
             >
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </div>
-        ))}
+              {/* Drag handle */}
+              <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+
+              {/* Move up/down buttons */}
+              <div className="flex flex-col gap-0.5">
+                <button
+                  className="p-0 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                  onClick={() => handleMoveUp(index)}
+                  disabled={index === 0}
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </button>
+                <button
+                  className="p-0 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                  onClick={() => handleMoveDown(index)}
+                  disabled={index === localOrder.length - 1}
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </div>
+
+              {/* Editable name */}
+              <Input
+                value={editName}
+                onChange={(e) => setEditNames((prev) => ({ ...prev, [entity.id]: e.target.value }))}
+                className="flex-1 h-7 text-xs"
+              />
+              {/* Save button */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[10px] px-2"
+                onClick={() => handleSaveName(entity.id)}
+                disabled={!hasNameChange || savingId === entity.id}
+              >
+                {savingId === entity.id ? '...' : '保存'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                onClick={() => handleDelete(entity.id)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -813,6 +868,9 @@ function EventTypeSection() {
   const [localOrder, setLocalOrder] = useState<CalendarEventType[]>([])
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragOverId, setDragOverId] = useState<string | null>(null)
+  // Inline editing state: map of event type id -> local edit values
+  const [editValues, setEditValues] = useState<Record<string, { name: string; shape: string; color: string; symbol: string }>>({})
+  const [savingId, setSavingId] = useState<string | null>(null)
   const { toast } = useToast()
 
   // Sort event types by sortOrder and sync local order
@@ -823,6 +881,15 @@ function EventTypeSection() {
   React.useEffect(() => {
     setLocalOrder(sortedEventTypes)
   }, [sortedEventTypes])
+
+  // Initialize edit values from event types
+  React.useEffect(() => {
+    const vals: Record<string, { name: string; shape: string; color: string; symbol: string }> = {}
+    eventTypes.forEach((t) => {
+      vals[t.id] = { name: t.name, shape: t.shape, color: t.color, symbol: t.symbol }
+    })
+    setEditValues(vals)
+  }, [eventTypes])
 
   const handleAdd = async () => {
     if (!newName.trim() || isSubmitting) return
@@ -885,6 +952,39 @@ function EventTypeSection() {
     } catch (e) {
       console.error('Failed to delete event type:', e)
       toast({ title: '删除失败', description: '网络错误', variant: 'destructive' })
+    }
+  }
+
+  // Inline edit handlers
+  const handleEditChange = (id: string, field: string, value: string) => {
+    setEditValues((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value },
+    }))
+  }
+
+  const handleSaveEdit = async (id: string) => {
+    const vals = editValues[id]
+    if (!vals || !vals.name.trim() || savingId) return
+
+    setSavingId(id)
+    try {
+      const res = await fetch('/api/settings/event-types', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name: vals.name.trim(), shape: vals.shape, color: vals.color, symbol: vals.symbol }),
+      })
+      if (res.ok) {
+        await fetchEventTypes()
+        toast({ title: '保存成功' })
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast({ title: '保存失败', description: data.error || '未知错误', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: '保存失败', description: '网络错误', variant: 'destructive' })
+    } finally {
+      setSavingId(null)
     }
   }
 
@@ -977,7 +1077,7 @@ function EventTypeSection() {
 
       {isAdding && (
         <div className="space-y-2 p-3 border rounded-lg bg-muted/30">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
@@ -1002,6 +1102,12 @@ function EventTypeSection() {
               onChange={(e) => setNewColor(e.target.value)}
               className="w-8 h-8 rounded border cursor-pointer"
             />
+            <Input
+              value={newColor}
+              onChange={(e) => setNewColor(e.target.value)}
+              className="w-20 h-8 text-xs font-mono"
+              placeholder="#hex"
+            />
           </div>
           <div className="flex items-center gap-2">
             <Input
@@ -1023,64 +1129,118 @@ function EventTypeSection() {
         </div>
       )}
 
-      <p className="text-[11px] text-muted-foreground">拖拽或使用箭头按钮调整图例显示顺序</p>
+      <p className="text-[11px] text-muted-foreground">拖拽或使用箭头按钮调整图例显示顺序，点击颜色/名称可直接修改</p>
 
       <div className="space-y-1">
-        {localOrder.map((type, index) => (
-          <div
-            key={type.id}
-            draggable
-            onDragStart={(e) => handleDragStart(e, type.id)}
-            onDragOver={(e) => handleDragOver(e, type.id)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, type.id)}
-            onDragEnd={handleDragEnd}
-            className={cn(
-              'flex items-center gap-2 p-1.5 rounded transition-all',
-              dragId === type.id && 'opacity-50 scale-95',
-              dragOverId === type.id && dragId !== type.id && 'border-t-2 border-primary',
-              'hover:bg-muted/50 cursor-grab active:cursor-grabbing'
-            )}
-          >
-            {/* Drag handle */}
-            <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-
-            {/* Move up/down buttons */}
-            <div className="flex flex-col gap-0.5">
-              <button
-                className="p-0 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
-                onClick={() => handleMoveUp(index)}
-                disabled={index === 0}
-              >
-                <ChevronUp className="h-3 w-3" />
-              </button>
-              <button
-                className="p-0 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
-                onClick={() => handleMoveDown(index)}
-                disabled={index === localOrder.length - 1}
-              >
-                <ChevronDown className="h-3 w-3" />
-              </button>
-            </div>
-
-            <EventShape shape={type.shape} color={type.color} size={26} symbol={type.symbol} />
-            <span className="text-sm flex-1">{type.name}</span>
-            {type.symbol && (
-              <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                {type.symbol}
-              </span>
-            )}
-            <span className="text-[10px] text-muted-foreground">{SHAPE_OPTIONS.find((o) => o.value === type.shape)?.label}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-muted-foreground hover:text-destructive"
-              onClick={() => handleDelete(type.id)}
+        {localOrder.map((type, index) => {
+          const ev = editValues[type.id] || { name: type.name, shape: type.shape, color: type.color, symbol: type.symbol }
+          const hasChanges = ev.name !== type.name || ev.shape !== type.shape || ev.color !== type.color || ev.symbol !== type.symbol
+          return (
+            <div
+              key={type.id}
+              draggable
+              onDragStart={(e) => handleDragStart(e, type.id)}
+              onDragOver={(e) => handleDragOver(e, type.id)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, type.id)}
+              onDragEnd={handleDragEnd}
+              className={cn(
+                'flex items-center gap-2 p-1.5 rounded transition-all',
+                dragId === type.id && 'opacity-50 scale-95',
+                dragOverId === type.id && dragId !== type.id && 'border-t-2 border-primary',
+                'hover:bg-muted/50 cursor-grab active:cursor-grabbing'
+              )}
             >
-              <Trash2 className="h-3 w-3" />
-            </Button>
-          </div>
-        ))}
+              {/* Drag handle */}
+              <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+
+              {/* Move up/down buttons */}
+              <div className="flex flex-col gap-0.5">
+                <button
+                  className="p-0 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                  onClick={() => handleMoveUp(index)}
+                  disabled={index === 0}
+                >
+                  <ChevronUp className="h-3 w-3" />
+                </button>
+                <button
+                  className="p-0 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                  onClick={() => handleMoveDown(index)}
+                  disabled={index === localOrder.length - 1}
+                >
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+              </div>
+
+              {/* Preview with current edit values */}
+              <EventShape shape={ev.shape} color={ev.color} size={26} symbol={ev.symbol} />
+
+              {/* Name edit */}
+              <Input
+                value={ev.name}
+                onChange={(e) => handleEditChange(type.id, 'name', e.target.value)}
+                className="w-20 h-7 text-xs"
+              />
+
+              {/* Shape edit */}
+              <Select value={ev.shape} onValueChange={(v) => handleEditChange(type.id, 'shape', v)}>
+                <SelectTrigger className="w-[70px] h-7 text-[10px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SHAPE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Color picker */}
+              <input
+                type="color"
+                value={ev.color}
+                onChange={(e) => handleEditChange(type.id, 'color', e.target.value)}
+                className="w-7 h-7 rounded border cursor-pointer"
+              />
+              {/* Hex color code input */}
+              <Input
+                value={ev.color}
+                onChange={(e) => handleEditChange(type.id, 'color', e.target.value)}
+                className="w-[72px] h-7 text-[10px] font-mono"
+              />
+
+              {/* Symbol edit */}
+              <Input
+                value={ev.symbol}
+                onChange={(e) => handleEditChange(type.id, 'symbol', e.target.value.slice(0, 2))}
+                className="w-12 h-7 text-[10px] text-center"
+                maxLength={2}
+                placeholder="标识"
+              />
+
+              {/* Save button */}
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-[10px] px-2"
+                onClick={() => handleSaveEdit(type.id)}
+                disabled={!hasChanges || !ev.name.trim() || savingId === type.id}
+              >
+                {savingId === type.id ? '...' : '保存'}
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                onClick={() => handleDelete(type.id)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

@@ -152,7 +152,7 @@ export function MonthView() {
                 <div
                   key={dayIdx}
                   className={cn(
-                    'group relative border-r last:border-r-0 p-1 cursor-pointer transition-colors hover:brightness-95 min-h-[80px] sm:min-h-[100px]',
+                    'group relative border-r last:border-r-0 p-1 cursor-pointer transition-colors hover:brightness-95 min-h-[100px] sm:min-h-[130px]',
                     !isCurrentMonth && 'opacity-40'
                   )}
                   style={dayStyle}
@@ -186,7 +186,7 @@ export function MonthView() {
 
                   {/* Events */}
                   <div className="mt-0.5 space-y-0.5 overflow-hidden">
-                    {dayEvents.slice(0, 3).map((event) => {
+                    {dayEvents.slice(0, 6).map((event) => {
                       const evtType = getEventType(event.eventTypeId)
                       return (
                         <div
@@ -207,9 +207,9 @@ export function MonthView() {
                         </div>
                       )
                     })}
-                    {dayEvents.length > 3 && (
+                    {dayEvents.length > 6 && (
                       <div className="text-[10px] text-muted-foreground pl-1">
-                        +{dayEvents.length - 3} 更多
+                        +{dayEvents.length - 6} 更多
                       </div>
                     )}
                   </div>
