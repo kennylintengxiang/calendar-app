@@ -58,11 +58,22 @@ export function MonthView() {
 
   const getEventsForDate = (date: Date) => {
     const dateStr = format(date, 'yyyy-MM-dd')
-    return events.filter((e) => {
+    const dateEvents = events.filter((e) => {
       const eStart = e.startDate.slice(0, 10)
       const eEnd = e.endDate ? e.endDate.slice(0, 10) : eStart
       return dateStr >= eStart && dateStr <= eEnd
     })
+    // Deduplicate: if multiple events have the same eventTypeId on the same day, only show one
+    const seenTypes = new Set<string>()
+    const deduped: typeof dateEvents = []
+    for (const event of dateEvents) {
+      const typeId = event.eventTypeId || '__none__'
+      if (!seenTypes.has(typeId)) {
+        seenTypes.add(typeId)
+        deduped.push(event)
+      }
+    }
+    return deduped
   }
 
   const getDayStyle = (date: Date, isCurrentMonth: boolean): React.CSSProperties => {
@@ -202,8 +213,8 @@ export function MonthView() {
                           }
                           onClick={(e) => handleEventClick(e, day, event.id)}
                         >
-                          {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={14} symbol={evtType.symbol} />}
-                          <span className="truncate">{event.title}</span>
+                          {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
+                          <span className="truncate">{event.description?.trim() ? `${event.title}-${event.description.trim()}` : event.title}</span>
                         </div>
                       )
                     })}
