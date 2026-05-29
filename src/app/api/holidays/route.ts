@@ -44,11 +44,12 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/holidays
- * Fetch latest Chinese holidays and store in database.
+ * Store hardcoded Chinese holidays in database for a given year.
  * Body: { year: number }
  *
- * In sandbox: uses z-ai-web-dev-sdk for web search and LLM parsing.
- * On Vercel: falls back to hardcoded holiday data.
+ * Note: Previously used z-ai-web-dev-sdk for live fetching, but that SDK
+ * is only available in the sandbox environment and causes build failures on Vercel.
+ * Now always uses hardcoded holiday data.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -62,29 +63,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let holidayData: Array<{ date: string; name: string; type: string; year: number }>;
-
-    try {
-      // Only attempt z-ai-web-dev-sdk in sandbox (not on Vercel)
-      // VERCEL env var is automatically set on Vercel deployments and inlined at build time,
-      // so the SDK import branch will be tree-shaken away on Vercel
-      if (process.env.VERCEL) {
-        // On Vercel, always use hardcoded data (SDK not available)
-        holidayData = getHardcodedHolidays(year);
-      } else {
-        // In sandbox, try to use z-ai-web-dev-sdk for live holiday data
-        try {
-          const { fetchHolidaysWithSDK } = await import('@/lib/holidays-sdk');
-          holidayData = await fetchHolidaysWithSDK(year);
-        } catch {
-          console.warn('z-ai-web-dev-sdk not available, using hardcoded holiday data');
-          holidayData = getHardcodedHolidays(year);
-        }
-      }
-    } catch (sdkError) {
-      console.warn('Web search/LLM failed, falling back to hardcoded data:', sdkError);
-      holidayData = getHardcodedHolidays(year);
-    }
+    const holidayData = getHardcodedHolidays(year);
 
     if (!holidayData || holidayData.length === 0) {
       return NextResponse.json(

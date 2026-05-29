@@ -9,9 +9,6 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
-  // Mark z-ai-web-dev-sdk as external so Next.js doesn't try to bundle it
-  // (it's only available in the sandbox environment, not on Vercel)
-  serverExternalPackages: ['z-ai-web-dev-sdk'],
   turbopack: {},
 };
 
