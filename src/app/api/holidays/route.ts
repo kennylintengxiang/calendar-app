@@ -72,16 +72,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Store holidays in database using upsert (based on unique date constraint)
-    const upsertPromises = holidayData.map((holiday) =>
-      db.holiday.upsert({
-        where: { date: holiday.date },
-        update: {
-          name: holiday.name,
-          type: holiday.type,
-          year: holiday.year,
-        },
-        create: {
+    // First, delete all existing holidays for this year to ensure stale data is removed
+    await db.holiday.deleteMany({
+      where: { year },
+    });
+
+    // Then create all holidays from the hardcoded data
+    const createPromises = holidayData.map((holiday) =>
+      db.holiday.create({
+        data: {
           date: holiday.date,
           name: holiday.name,
           type: holiday.type,
@@ -90,7 +89,7 @@ export async function POST(request: NextRequest) {
       })
     );
 
-    const holidays = await Promise.all(upsertPromises);
+    const holidays = await Promise.all(createPromises);
 
     return NextResponse.json({ holidays, count: holidays.length });
   } catch (error) {

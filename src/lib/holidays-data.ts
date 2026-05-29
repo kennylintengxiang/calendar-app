@@ -69,10 +69,10 @@ export const HOLIDAYS_2026 = [
   { date: '2026-05-04', name: '劳动节', type: 'holiday', year: 2026 },
   { date: '2026-05-05', name: '劳动节', type: 'holiday', year: 2026 },
   { date: '2026-04-26', name: '劳动节调休', type: 'workday', year: 2026 },
-  // 端午节 - May 19 (Lunar)
-  { date: '2026-05-30', name: '端午节', type: 'holiday', year: 2026 },
-  { date: '2026-05-31', name: '端午节', type: 'holiday', year: 2026 },
-  { date: '2026-06-01', name: '端午节', type: 'holiday', year: 2026 },
+  // 端午节 - Jun 19-21 (2026年端午节)
+  { date: '2026-06-19', name: '端午节', type: 'holiday', year: 2026 },
+  { date: '2026-06-20', name: '端午节', type: 'holiday', year: 2026 },
+  { date: '2026-06-21', name: '端午节', type: 'holiday', year: 2026 },
   // 中秋节 - Sep 25 (Lunar)
   // 国庆节 - Oct 1
   { date: '2026-10-01', name: '国庆节', type: 'holiday', year: 2026 },

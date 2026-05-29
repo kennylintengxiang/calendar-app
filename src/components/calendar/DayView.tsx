@@ -34,8 +34,6 @@ export function DayView() {
   }, [entities])
 
   const hasEntities = sortedEntities.length > 0
-  const entityCols = sortedEntities
-  const colCount = hasEntities ? entityCols.length + 1 : 1
 
   const getHolidayForDate = () => {
     const dateStr = format(currentDate, 'yyyy-MM-dd')
@@ -51,14 +49,6 @@ export function DayView() {
     })
   }
 
-  const getEventsForEntity = (entityId?: string) => {
-    const dateEvents = getEventsForDate()
-    if (entityId) {
-      return dateEvents.filter((e) => e.entityIds.includes(entityId))
-    }
-    return dateEvents.filter((e) => e.entityIds.length === 0)
-  }
-
   const getEventType = (typeId?: string | null) => {
     if (!typeId) return null
     return eventTypes.find((t) => t.id === typeId)
@@ -72,6 +62,13 @@ export function DayView() {
     const event = events.find((ev) => ev.id === eventId)
     if (event) openEventDialog(currentDate, event)
   }
+
+  // Get all events for the day to determine column count
+  const allDayEvents = getEventsForDate()
+  const eventCount = allDayEvents.length
+
+  // Column template for events: each event gets its own column
+  const eventColTemplate = eventCount > 0 ? `repeat(${eventCount}, 1fr)` : '1fr'
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-auto">
@@ -102,103 +99,103 @@ export function DayView() {
 
       {hasEntities ? (
         <div className="flex-1">
-          {/* Event header row - shows all events for the day with "事件名称-备注" format */}
-          {(() => {
-            const allDayEvents = getEventsForDate()
-            const displayEvents = allDayEvents.slice(0, 6)
-            const hasMore = allDayEvents.length > 6
-            const headerRowHeight = Math.max(104, allDayEvents.length * 24 + 8)
-
-            if (allDayEvents.length === 0) {
-              return (
-                <div
-                  className="p-8 text-center text-muted-foreground text-sm cursor-pointer hover:bg-accent/20 transition-colors"
-                  onClick={() => openEventDialog(currentDate)}
-                >
-                  <p>暂无事件</p>
-                  <p className="text-xs mt-1">点击此处添加事件</p>
-                </div>
-              )
-            }
-
-            return (
+          {allDayEvents.length === 0 ? (
+            <div
+              className="p-8 text-center text-muted-foreground text-sm cursor-pointer hover:bg-accent/20 transition-colors"
+              onClick={() => openEventDialog(currentDate)}
+            >
+              <p>暂无事件</p>
+              <p className="text-xs mt-1">点击此处添加事件</p>
+            </div>
+          ) : (
+            <>
+              {/* Event header row - each event as a column */}
               <div
                 className="grid border-b"
-                style={{ gridTemplateColumns: `80px 1fr`, minHeight: `${headerRowHeight}px` }}
+                style={{ gridTemplateColumns: `80px ${eventColTemplate}`, minHeight: '104px' }}
               >
                 <div className="p-1.5 text-xs font-medium text-muted-foreground text-center border-r flex items-center justify-center bg-muted/20">
                   事件
                 </div>
-                <div className="p-1.5">
-                  <div className="space-y-0.5">
-                    {displayEvents.map((event) => {
-                      const evtType = getEventType(event.eventTypeId)
-                      const headerTitle = getEventHeaderTitle(event)
-                      return (
-                        <div
-                          key={event.id}
-                          className={cn(
-                            'flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] truncate cursor-pointer transition-opacity hover:opacity-80',
-                            evtType ? '' : 'bg-primary/10'
-                          )}
-                          style={evtType ? { backgroundColor: evtType.color + '20', color: evtType.color } : {}}
-                          onClick={(e) => handleEventClick(e, event.id)}
-                        >
-                          {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
-                          <span className="truncate">{headerTitle}</span>
-                        </div>
-                      )
-                    })}
-                    {hasMore && (
-                      <div className="text-[10px] text-muted-foreground pl-1">
-                        +{allDayEvents.length - 6} 更多
+                {allDayEvents.map((event) => {
+                  const evtType = getEventType(event.eventTypeId)
+                  const headerTitle = getEventHeaderTitle(event)
+                  return (
+                    <div
+                      key={event.id}
+                      className={cn(
+                        'border-r last:border-r-0 p-0.5 cursor-pointer transition-opacity hover:opacity-80'
+                      )}
+                      style={evtType ? { backgroundColor: evtType.color + '10' } : {}}
+                      onClick={(e) => handleEventClick(e, event.id)}
+                      title={getEventDisplayTitle(event)}
+                    >
+                      <div className="flex flex-col items-center gap-0.5 py-0.5">
+                        {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
+                        <span className="text-[12px] leading-tight truncate w-full text-center" style={evtType ? { color: evtType.color } : {}}>
+                          {headerTitle}
+                        </span>
                       </div>
-                    )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Entity rows with dot indicators - each entity gets a row, dots under event columns */}
+              {sortedEntities.map((entity) => (
+                <div
+                  key={entity.id}
+                  className="grid border-b"
+                  style={{ gridTemplateColumns: `80px ${eventColTemplate}` }}
+                >
+                  <div className="p-1.5 text-xs font-medium text-muted-foreground text-center border-r flex items-center justify-center bg-muted/20">
+                    <span className="truncate" title={entity.name}>{entity.name}</span>
                   </div>
+                  {allDayEvents.map((event) => {
+                    const evtType = getEventType(event.eventTypeId)
+                    const belongsToEntity = event.entityIds.includes(entity.id)
+                    return (
+                      <div
+                        key={event.id}
+                        className="border-r last:border-r-0 flex items-center justify-center min-h-[24px]"
+                      >
+                        {belongsToEntity ? (
+                          <div
+                            className="cursor-pointer transition-opacity hover:opacity-80"
+                            onClick={(e) => handleEventClick(e, event.id)}
+                            title={getEventDisplayTitle(event)}
+                          >
+                            {evtType ? (
+                              <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />
+                            ) : (
+                              <div className="w-4 h-4 rounded-full bg-primary/40" />
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
                 </div>
-              </div>
-            )
-          })()}
+              ))}
 
-          {/* Entity column headers */}
-          <div
-            className="grid border-b"
-            style={{ gridTemplateColumns: `120px repeat(${colCount}, 1fr)` }}
-          >
-            <div className="p-2 text-xs text-muted-foreground text-center border-r bg-muted/20">
-              主体
-            </div>
-            {entityCols.map((entity) => (
-              <div key={entity.id} className="p-2 text-xs text-center border-r last:border-r-0 font-medium text-muted-foreground bg-muted/20 truncate" title={entity.name}>
-                {entity.name}
-              </div>
-            ))}
-            <div className="p-2 text-xs text-center text-muted-foreground bg-muted/20 truncate" title="未分类">
-              未分类
-            </div>
-          </div>
-
-          {/* Entity rows with dot indicators showing which entities have which events - vertically aligned */}
-          <div className="grid border-b" style={{ gridTemplateColumns: `120px repeat(${colCount}, 1fr)` }}>
-            <div className="p-1.5 text-xs text-muted-foreground text-center border-r flex items-center justify-center bg-muted/10">
-              事件分布
-            </div>
-            {entityCols.map((entity) => {
-              const entityEventIds = new Set(getEventsForEntity(entity.id).map(e => e.id))
-              const allDayEvents = getEventsForDate()
-              return (
-                <div key={entity.id} className="border-r last:border-r-0 p-1.5 min-h-[32px]">
-                  <div className="flex flex-col gap-0.5">
-                    {allDayEvents.slice(0, 6).map((event) => {
-                      const evtType = getEventType(event.eventTypeId)
-                      const belongsToEntity = entityEventIds.has(event.id)
-                      if (!belongsToEntity) {
-                        // Empty placeholder to maintain vertical alignment
-                        return <div key={event.id} className="h-[16px]" />
-                      }
-                      return (
+              {/* 未分类 row */}
+              <div
+                className="grid border-b"
+                style={{ gridTemplateColumns: `80px ${eventColTemplate}` }}
+              >
+                <div className="p-1.5 text-xs font-medium text-muted-foreground text-center border-r flex items-center justify-center bg-muted/20">
+                  <span title="未分类">未分类</span>
+                </div>
+                {allDayEvents.map((event) => {
+                  const evtType = getEventType(event.eventTypeId)
+                  const belongsToUncat = event.entityIds.length === 0
+                  return (
+                    <div
+                      key={event.id}
+                      className="border-r last:border-r-0 flex items-center justify-center min-h-[24px]"
+                    >
+                      {belongsToUncat ? (
                         <div
-                          key={event.id}
                           className="cursor-pointer transition-opacity hover:opacity-80"
                           onClick={(e) => handleEventClick(e, event.id)}
                           title={getEventDisplayTitle(event)}
@@ -209,40 +206,13 @@ export function DayView() {
                             <div className="w-4 h-4 rounded-full bg-primary/40" />
                           )}
                         </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })}
-            {/* 未分类 column */}
-            <div className="p-1.5 min-h-[32px]">
-              <div className="flex flex-col gap-0.5">
-                {getEventsForDate().slice(0, 6).map((event) => {
-                  const evtType = getEventType(event.eventTypeId)
-                  const uncatEventIds = new Set(getEventsForEntity().map(e => e.id))
-                  const belongsToUncat = uncatEventIds.has(event.id)
-                  if (!belongsToUncat) {
-                    return <div key={event.id} className="h-[16px]" />
-                  }
-                  return (
-                    <div
-                      key={event.id}
-                      className="cursor-pointer transition-opacity hover:opacity-80"
-                      onClick={(e) => handleEventClick(e, event.id)}
-                      title={getEventDisplayTitle(event)}
-                    >
-                      {evtType ? (
-                        <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />
-                      ) : (
-                        <div className="w-4 h-4 rounded-full bg-primary/40" />
-                      )}
+                      ) : null}
                     </div>
                   )
                 })}
               </div>
-            </div>
-          </div>
+            </>
+          )}
 
           {/* Click to add event area */}
           <div
@@ -255,39 +225,33 @@ export function DayView() {
       ) : (
         /* No entities — simple list layout */
         <div className="flex-1 overflow-y-auto">
-          {(() => {
-            const dayEvents = getEventsForDate()
-            if (dayEvents.length === 0) {
-              return (
-                <div className="p-8 text-center text-muted-foreground text-sm">
-                  <p>暂无事件</p>
-                  <p className="text-xs mt-1">点击空白处添加事件</p>
-                </div>
-              )
-            }
-            return (
-              <div className="space-y-1 p-2">
-                {dayEvents.map((event) => {
-                  const evtType = getEventType(event.eventTypeId)
-                  const headerTitle = getEventHeaderTitle(event)
-                  return (
-                    <div
-                      key={event.id}
-                      className={cn(
-                        'flex items-center gap-2 px-3 py-2 rounded text-[12px] cursor-pointer transition-opacity hover:opacity-80',
-                        evtType ? '' : 'bg-primary/10'
-                      )}
-                      style={evtType ? { backgroundColor: evtType.color + '20', color: evtType.color } : {}}
-                      onClick={(e) => { e.stopPropagation(); openEventDialog(currentDate, event) }}
-                    >
-                      {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
-                      <span className="truncate font-medium">{headerTitle}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })()}
+          {allDayEvents.length === 0 ? (
+            <div className="p-8 text-center text-muted-foreground text-sm">
+              <p>暂无事件</p>
+              <p className="text-xs mt-1">点击空白处添加事件</p>
+            </div>
+          ) : (
+            <div className="space-y-1 p-2">
+              {allDayEvents.map((event) => {
+                const evtType = getEventType(event.eventTypeId)
+                const headerTitle = getEventHeaderTitle(event)
+                return (
+                  <div
+                    key={event.id}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 rounded text-[12px] cursor-pointer transition-opacity hover:opacity-80',
+                      evtType ? '' : 'bg-primary/10'
+                    )}
+                    style={evtType ? { backgroundColor: evtType.color + '20', color: evtType.color } : {}}
+                    onClick={(e) => { e.stopPropagation(); openEventDialog(currentDate, event) }}
+                  >
+                    {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
+                    <span className="truncate font-medium">{headerTitle}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
           <div
             className="p-4 text-center cursor-pointer hover:bg-accent/20 transition-colors min-h-[80px] flex items-center justify-center"
             onClick={() => openEventDialog(currentDate)}

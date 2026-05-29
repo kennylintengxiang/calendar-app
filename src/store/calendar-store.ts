@@ -827,16 +827,11 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         get().fetchColorSettings(),
         get().fetchEventTypes(),
         get().fetchEntities(),
-        get().fetchHolidays(year),
+        get().refreshHolidays(year),
         get().fetchEvents(),
         get().fetchShareLinks(),
         get().fetchMemberships(),
       ])
-
-      // If no holidays loaded, try to refresh
-      if (get().holidays.length === 0) {
-        await get().refreshHolidays(year)
-      }
     } catch (e) {
       console.error('Failed to init for user:', e)
     }
