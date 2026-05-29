@@ -8,7 +8,7 @@
     "vercel-build": "node scripts/select-schema.js && npx prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
-    "postinstall": "npx prisma generate || echo 'prisma generate skipped'",
+    "postinstall": "node scripts/select-schema.js && npx prisma generate || echo 'prisma generate skipped'",
     "db:select": "node scripts/select-schema.js",
     "db:push": "node scripts/select-schema.js && npx prisma db push",
     "db:generate": "node scripts/select-schema.js && npx prisma generate",
