@@ -83,14 +83,11 @@ export function WeekView() {
     return max
   }, [weekDays, events])
 
-  // Build column template: entity label + for each day, N sub-columns (one per event slot)
-  // Each day gets maxEventsInWeek sub-columns, each 1fr
-  const dayColTemplate = useMemo(() => {
-    if (maxEventsInWeek === 0) return '1fr'
-    return `repeat(${maxEventsInWeek}, 1fr)`
-  }, [maxEventsInWeek])
-
-  const totalCols = 1 + 7 * maxEventsInWeek // entity label + 7 days * events per day
+  // Build column template: entity label + 7 days * maxEventsInWeek sub-columns
+  // IMPORTANT: cannot use nested repeat() in CSS - must flatten to repeat(7*N, 1fr)
+  const subColCount = maxEventsInWeek > 0 ? maxEventsInWeek : 1
+  const totalSubCols = 7 * subColCount
+  const daySubColTemplate = `repeat(${totalSubCols}, 1fr)`
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-auto">
@@ -99,7 +96,7 @@ export function WeekView() {
           {/* Row 1: Day headers spanning across event sub-columns */}
           <div
             className="grid border-b sticky top-0 bg-background z-10"
-            style={{ gridTemplateColumns: `80px repeat(7, 1fr)` }}
+            style={{ gridTemplateColumns: `80px ${daySubColTemplate}` }}
           >
             <div className="p-1.5 text-xs text-muted-foreground text-center border-r border-b bg-muted/30">
               主体
@@ -110,12 +107,13 @@ export function WeekView() {
                 <div
                   key={i}
                   className={cn(
-                    'border-r last:border-r-0 border-b cursor-pointer hover:bg-accent/50 transition-colors bg-muted/30',
+                    'border-b cursor-pointer hover:bg-accent/50 transition-colors bg-muted/30',
                     isToday(day) && 'bg-primary/5'
                   )}
+                  style={{ gridColumn: `span ${subColCount}` }}
                   onClick={() => openEventDialog(day)}
                 >
-                  <div className="p-1.5 text-center">
+                  <div className="p-1.5 text-center border-r border-l first:border-l-0">
                     <div className="text-[10px] text-muted-foreground">{WEEKDAYS_FULL[i]}</div>
                     <div
                       className={cn(
@@ -140,7 +138,7 @@ export function WeekView() {
           {/* Row 2: Event header row - each event gets its own sub-column within a day */}
           <div
             className="grid border-b"
-            style={{ gridTemplateColumns: `80px repeat(7, ${dayColTemplate})`, minHeight: '104px' }}
+            style={{ gridTemplateColumns: `80px ${daySubColTemplate}`, minHeight: '104px' }}
           >
             <div className="p-1.5 text-xs font-medium text-muted-foreground text-center border-r flex items-center justify-center bg-muted/20">
               事件
@@ -150,15 +148,15 @@ export function WeekView() {
               return (
                 <React.Fragment key={dayIdx}>
                   {/* Render event sub-columns for this day */}
-                  {Array.from({ length: maxEventsInWeek }, (_, evIdx) => {
+                  {Array.from({ length: subColCount }, (_, evIdx) => {
                     const event = dayEvents[evIdx]
                     if (!event) {
-                      // Empty sub-column
+                      // Empty sub-column placeholder
                       return (
                         <div
-                          key={`empty-${evIdx}`}
+                          key={`empty-${dayIdx}-${evIdx}`}
                           className={cn(
-                            'border-r last:border-r-0 p-0.5 min-h-[16px]',
+                            'border-r p-0.5 min-h-[16px]',
                             isToday(day) && 'bg-primary/[0.02]'
                           )}
                         />
@@ -170,7 +168,7 @@ export function WeekView() {
                       <div
                         key={event.id}
                         className={cn(
-                          'border-r last:border-r-0 p-0.5 cursor-pointer transition-opacity hover:opacity-80',
+                          'border-r p-0.5 cursor-pointer transition-opacity hover:opacity-80',
                           isToday(day) && 'bg-primary/[0.02]'
                         )}
                         style={evtType ? { backgroundColor: evtType.color + '10' } : {}}
@@ -196,7 +194,7 @@ export function WeekView() {
             <div
               key={entity.id}
               className="grid border-b"
-              style={{ gridTemplateColumns: `80px repeat(7, ${dayColTemplate})` }}
+              style={{ gridTemplateColumns: `80px ${daySubColTemplate}` }}
             >
               <div className="p-1.5 text-xs font-medium text-muted-foreground text-center border-r flex items-center justify-center bg-muted/20">
                 <span className="truncate" title={entity.name}>{entity.name}</span>
@@ -205,14 +203,14 @@ export function WeekView() {
                 const dayEvents = getEventsForDate(day)
                 return (
                   <React.Fragment key={dayIdx}>
-                    {Array.from({ length: maxEventsInWeek }, (_, evIdx) => {
+                    {Array.from({ length: subColCount }, (_, evIdx) => {
                       const event = dayEvents[evIdx]
                       if (!event) {
                         return (
                           <div
-                            key={`empty-${evIdx}`}
+                            key={`empty-${dayIdx}-${evIdx}`}
                             className={cn(
-                              'border-r last:border-r-0 min-h-[24px]',
+                              'border-r min-h-[24px]',
                               isToday(day) && 'bg-primary/[0.02]'
                             )}
                           />
@@ -224,7 +222,7 @@ export function WeekView() {
                         <div
                           key={event.id}
                           className={cn(
-                            'border-r last:border-r-0 flex items-center justify-center min-h-[24px] cursor-pointer',
+                            'border-r flex items-center justify-center min-h-[24px] cursor-pointer',
                             isToday(day) && 'bg-primary/[0.02]'
                           )}
                           onClick={() => openEventDialog(day)}
@@ -254,7 +252,7 @@ export function WeekView() {
           {/* 未分类 row */}
           <div
             className="grid border-b"
-            style={{ gridTemplateColumns: `80px repeat(7, ${dayColTemplate})` }}
+            style={{ gridTemplateColumns: `80px ${daySubColTemplate}` }}
           >
             <div className="p-1.5 text-xs font-medium text-muted-foreground text-center border-r flex items-center justify-center bg-muted/20">
               <span title="未分类">未分类</span>
@@ -263,14 +261,14 @@ export function WeekView() {
               const dayEvents = getEventsForDate(day)
               return (
                 <React.Fragment key={dayIdx}>
-                  {Array.from({ length: maxEventsInWeek }, (_, evIdx) => {
+                  {Array.from({ length: subColCount }, (_, evIdx) => {
                     const event = dayEvents[evIdx]
                     if (!event) {
                       return (
                         <div
-                          key={`empty-${evIdx}`}
+                          key={`empty-${dayIdx}-${evIdx}`}
                           className={cn(
-                            'border-r last:border-r-0 min-h-[24px]',
+                            'border-r min-h-[24px]',
                             isToday(day) && 'bg-primary/[0.02]'
                           )}
                         />
@@ -282,7 +280,7 @@ export function WeekView() {
                       <div
                         key={event.id}
                         className={cn(
-                          'border-r last:border-r-0 flex items-center justify-center min-h-[24px] cursor-pointer',
+                          'border-r flex items-center justify-center min-h-[24px] cursor-pointer',
                           isToday(day) && 'bg-primary/[0.02]'
                         )}
                         onClick={() => openEventDialog(day)}

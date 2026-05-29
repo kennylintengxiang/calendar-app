@@ -254,6 +254,7 @@ interface CalendarState {
 
   // Loading states
   isLoadingHolidays: boolean
+  isSwitchingUser: boolean
 }
 
 function serializeEvent(e: Record<string, unknown>): CalendarEvent {
@@ -802,8 +803,13 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
     const { users } = get()
     const user = users.find((u) => u.id === userId)
     if (user) {
-      get().setCurrentUser(user)
-      await get().initForUser(userId)
+      set({ isSwitchingUser: true })
+      try {
+        get().setCurrentUser(user)
+        await get().initForUser(userId)
+      } finally {
+        set({ isSwitchingUser: false })
+      }
     }
   },
 
@@ -1287,4 +1293,5 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
   },
 
   isLoadingHolidays: false,
+  isSwitchingUser: false,
 }))
