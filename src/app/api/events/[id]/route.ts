@@ -37,7 +37,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { title, description, startDate, endDate, allDay, eventTypeId, userId } = body;
+    const { title, description, startDate, endDate, allDay, eventTypeId, userId, entityIds } = body;
 
     // Check if event exists
     const existing = await db.calendarEvent.findUnique({ where: { id } });
@@ -72,11 +72,27 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (allDay !== undefined) updateData.allDay = allDay;
     if (eventTypeId !== undefined) updateData.eventTypeId = eventTypeId || null;
 
+    // Handle entityIds update
+    if (entityIds !== undefined) {
+      // Delete existing entity associations and create new ones
+      await db.eventEntity.deleteMany({ where: { eventId: id } });
+      if (Array.isArray(entityIds) && entityIds.length > 0) {
+        updateData.eventEntities = {
+          create: entityIds.map((entityId: string) => ({ entityId })),
+        };
+      }
+    }
+
     const event = await db.calendarEvent.update({
       where: { id },
       data: updateData,
       include: {
         eventType: true,
+        eventEntities: {
+          include: {
+            entity: true,
+          },
+        },
       },
     });
 

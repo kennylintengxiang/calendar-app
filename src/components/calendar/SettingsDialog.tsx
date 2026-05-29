@@ -17,9 +17,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useCalendarStore, CalendarEventType } from '@/store/calendar-store'
+import { useCalendarStore, CalendarEventType, Entity } from '@/store/calendar-store'
 import { EventShape, SHAPE_OPTIONS } from './EventShape'
-import { Trash2, Plus, RefreshCw, GripVertical, ChevronUp, ChevronDown } from 'lucide-react'
+import { Trash2, Plus, RefreshCw, GripVertical, ChevronUp, ChevronDown, Shield } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -43,11 +43,17 @@ export function SettingsDialog() {
         </DialogHeader>
 
         <div className="space-y-6 py-2">
+          {/* Account Management (Admin only) */}
+          <AccountManagementSection />
+
           {/* Color Settings */}
           <ColorSettingsSection />
 
           {/* Event Type Management */}
           <EventTypeSection />
+
+          {/* Entity Management */}
+          <EntitySection />
 
           {/* Holiday Refresh */}
           <div className="space-y-3">
@@ -68,6 +74,232 @@ export function SettingsDialog() {
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+interface AccountInfo {
+  id: string
+  username: string
+  role: string
+  createdAt: string
+  users: Array<{ id: string; name: string }>
+}
+
+function AccountManagementSection() {
+  const { isAuthenticated, authAccount } = useCalendarStore()
+  const { toast } = useToast()
+  const [accounts, setAccounts] = useState<AccountInfo[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [isAdding, setIsAdding] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [newUsername, setNewUsername] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [newDisplayName, setNewDisplayName] = useState('')
+  const [newRole, setNewRole] = useState<'user' | 'admin'>('user')
+
+  const isAdmin = isAuthenticated && authAccount?.role === 'admin'
+
+  const fetchAccounts = React.useCallback(async () => {
+    setIsLoading(true)
+    try {
+      const res = await fetch('/api/auth/accounts')
+      if (res.ok) {
+        const data = await res.json()
+        setAccounts(data.accounts)
+      } else {
+        toast({ title: '获取账号列表失败', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: '网络错误', variant: 'destructive' })
+    } finally {
+      setIsLoading(false)
+    }
+  }, [toast])
+
+  React.useEffect(() => {
+    if (isAdmin) {
+      fetchAccounts()
+    }
+  }, [isAdmin, fetchAccounts])
+
+  const handleCreate = async () => {
+    if (!newUsername.trim() || !newPassword || isSubmitting) return
+
+    setIsSubmitting(true)
+    try {
+      const res = await fetch('/api/auth/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: newUsername.trim(),
+          password: newPassword,
+          displayName: newDisplayName.trim() || undefined,
+          role: newRole,
+        }),
+      })
+      if (res.ok) {
+        await fetchAccounts()
+        setNewUsername('')
+        setNewPassword('')
+        setNewDisplayName('')
+        setNewRole('user')
+        setIsAdding(false)
+        toast({ title: '创建成功', description: `账号 "${newUsername.trim()}" 已创建` })
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast({ title: '创建失败', description: data.error || '未知错误', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: '网络错误', variant: 'destructive' })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleDelete = async (id: string, username: string) => {
+    try {
+      const res = await fetch(`/api/auth/accounts?id=${id}`, { method: 'DELETE' })
+      if (res.ok) {
+        await fetchAccounts()
+        toast({ title: '已删除', description: `账号 "${username}" 已删除` })
+      } else {
+        const data = await res.json().catch(() => ({}))
+        toast({ title: '删除失败', description: data.error || '未知错误', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: '网络错误', variant: 'destructive' })
+    }
+  }
+
+  if (!isAdmin) return null
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Shield className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">账号管理</h3>
+        </div>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setIsAdding(!isAdding)}>
+          <Plus className="h-3 w-3 mr-1" />
+          新增
+        </Button>
+      </div>
+
+      {isAdding && (
+        <div className="space-y-2 p-3 border rounded-lg bg-muted/30">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[10px]">用户名</Label>
+              <Input
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
+                placeholder="用户名 (≥3字符)"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">密码</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="密码 (≥6字符)"
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <Label className="text-[10px]">显示名称（可选）</Label>
+              <Input
+                value={newDisplayName}
+                onChange={(e) => setNewDisplayName(e.target.value)}
+                placeholder="显示名称"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[10px]">角色</Label>
+              <Select value={newRole} onValueChange={(v: 'user' | 'admin') => setNewRole(v)}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">普通用户</SelectItem>
+                  <SelectItem value="admin">管理员</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setIsAdding(false)}>
+              取消
+            </Button>
+            <Button
+              size="sm"
+              className="h-8 text-xs"
+              onClick={handleCreate}
+              disabled={newUsername.trim().length < 3 || newPassword.length < 6 || isSubmitting}
+            >
+              {isSubmitting ? '创建中...' : '创建'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground">加载中...</p>
+      ) : (
+        <div className="space-y-1 max-h-60 overflow-y-auto">
+          {accounts.map((account) => (
+            <div
+              key={account.id}
+              className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 transition-colors"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium truncate">{account.username}</span>
+                  <span
+                    className={cn(
+                      'text-[10px] px-1.5 py-0.5 rounded font-medium',
+                      account.role === 'admin'
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                    )}
+                  >
+                    {account.role === 'admin' ? '管理员' : '用户'}
+                  </span>
+                  {account.id === authAccount?.id && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 font-medium">
+                      当前
+                    </span>
+                  )}
+                </div>
+                {account.users.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    关联用户: {account.users.map((u) => u.name).join(', ')}
+                  </p>
+                )}
+              </div>
+              {account.id !== authAccount?.id && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive flex-shrink-0"
+                  onClick={() => handleDelete(account.id, account.username)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          ))}
+          {accounts.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-2">暂无账号</p>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -345,6 +577,221 @@ function ColorSettingsSection() {
               size="icon"
               className="h-6 w-6 text-muted-foreground hover:text-destructive"
               onClick={() => handleDeleteColor(setting.id)}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function EntitySection() {
+  const { entities, currentUser, reorderEntities, addEntity, deleteEntity } = useCalendarStore()
+  const [isAdding, setIsAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [localOrder, setLocalOrder] = useState<Entity[]>([])
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const { toast } = useToast()
+
+  // Sort entities by sortOrder and sync local order
+  const sortedEntities = React.useMemo(() => {
+    return [...entities].sort((a, b) => a.sortOrder - b.sortOrder)
+  }, [entities])
+
+  React.useEffect(() => {
+    setLocalOrder(sortedEntities)
+  }, [sortedEntities])
+
+  const handleAdd = async () => {
+    if (!newName.trim() || isSubmitting) return
+
+    const duplicate = entities.some(
+      (e) => e.name.toLowerCase() === newName.trim().toLowerCase()
+    )
+    if (duplicate) {
+      toast({ title: '添加失败', description: `主体"${newName.trim()}"已存在，请使用其他名称`, variant: 'destructive' })
+      return
+    }
+
+    if (!currentUser) {
+      toast({ title: '添加失败', description: '用户信息未加载，请刷新页面重试', variant: 'destructive' })
+      return
+    }
+
+    setIsSubmitting(true)
+    try {
+      await addEntity(newName.trim())
+      setNewName('')
+      setIsAdding(false)
+      toast({ title: '添加成功', description: `主体"${newName.trim()}"已创建` })
+    } catch (e) {
+      console.error('Failed to add entity:', e)
+      toast({ title: '添加失败', description: '网络错误，请重试', variant: 'destructive' })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteEntity(id)
+      toast({ title: '已删除' })
+    } catch (e) {
+      console.error('Failed to delete entity:', e)
+      toast({ title: '删除失败', description: '网络错误', variant: 'destructive' })
+    }
+  }
+
+  // Drag & Drop handlers
+  const handleDragStart = (e: React.DragEvent, id: string) => {
+    setDragId(id)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+  }
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (dragOverId !== id) {
+      setDragOverId(id)
+    }
+  }
+
+  const handleDragLeave = () => {
+    setDragOverId(null)
+  }
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetId: string) => {
+    e.preventDefault()
+    setDragOverId(null)
+
+    const sourceId = dragId
+    if (!sourceId || sourceId === targetId) {
+      setDragId(null)
+      return
+    }
+
+    const newOrder = [...localOrder]
+    const sourceIndex = newOrder.findIndex((t) => t.id === sourceId)
+    const targetIndex = newOrder.findIndex((t) => t.id === targetId)
+
+    if (sourceIndex === -1 || targetIndex === -1) {
+      setDragId(null)
+      return
+    }
+
+    const [moved] = newOrder.splice(sourceIndex, 1)
+    newOrder.splice(targetIndex, 0, moved)
+    setLocalOrder(newOrder)
+    setDragId(null)
+
+    const items = newOrder.map((t, idx) => ({ id: t.id, sortOrder: idx }))
+    await reorderEntities(items)
+  }, [dragId, localOrder, reorderEntities])
+
+  const handleDragEnd = () => {
+    setDragId(null)
+    setDragOverId(null)
+  }
+
+  const handleMoveUp = async (index: number) => {
+    if (index <= 0) return
+    const newOrder = [...localOrder]
+    const temp = newOrder[index]
+    newOrder[index] = newOrder[index - 1]
+    newOrder[index - 1] = temp
+    setLocalOrder(newOrder)
+    const items = newOrder.map((t, idx) => ({ id: t.id, sortOrder: idx }))
+    await reorderEntities(items)
+  }
+
+  const handleMoveDown = async (index: number) => {
+    if (index >= localOrder.length - 1) return
+    const newOrder = [...localOrder]
+    const temp = newOrder[index]
+    newOrder[index] = newOrder[index + 1]
+    newOrder[index + 1] = temp
+    setLocalOrder(newOrder)
+    const items = newOrder.map((t, idx) => ({ id: t.id, sortOrder: idx }))
+    await reorderEntities(items)
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">主体管理</h3>
+        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setIsAdding(!isAdding)}>
+          <Plus className="h-3 w-3 mr-1" />
+          新增
+        </Button>
+      </div>
+
+      {isAdding && (
+        <div className="space-y-2 p-3 border rounded-lg bg-muted/30">
+          <div className="flex items-center gap-2">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="主体名称"
+              className="w-32 h-8 text-xs"
+            />
+            <Button size="sm" className="h-8 text-xs ml-auto" onClick={handleAdd} disabled={!newName.trim() || isSubmitting}>
+              {isSubmitting ? '添加中...' : '添加'}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <p className="text-[11px] text-muted-foreground">拖拽或使用箭头按钮调整主体显示顺序</p>
+
+      <div className="space-y-1">
+        {localOrder.map((entity, index) => (
+          <div
+            key={entity.id}
+            draggable
+            onDragStart={(e) => handleDragStart(e, entity.id)}
+            onDragOver={(e) => handleDragOver(e, entity.id)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, entity.id)}
+            onDragEnd={handleDragEnd}
+            className={cn(
+              'flex items-center gap-2 p-1.5 rounded transition-all',
+              dragId === entity.id && 'opacity-50 scale-95',
+              dragOverId === entity.id && dragId !== entity.id && 'border-t-2 border-primary',
+              'hover:bg-muted/50 cursor-grab active:cursor-grabbing'
+            )}
+          >
+            {/* Drag handle */}
+            <GripVertical className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+
+            {/* Move up/down buttons */}
+            <div className="flex flex-col gap-0.5">
+              <button
+                className="p-0 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                onClick={() => handleMoveUp(index)}
+                disabled={index === 0}
+              >
+                <ChevronUp className="h-3 w-3" />
+              </button>
+              <button
+                className="p-0 hover:text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                onClick={() => handleMoveDown(index)}
+                disabled={index === localOrder.length - 1}
+              >
+                <ChevronDown className="h-3 w-3" />
+              </button>
+            </div>
+
+            <span className="text-sm flex-1">{entity.name}</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+              onClick={() => handleDelete(entity.id)}
             >
               <Trash2 className="h-3 w-3" />
             </Button>

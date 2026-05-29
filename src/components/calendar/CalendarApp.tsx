@@ -96,37 +96,11 @@ export function CalendarApp() {
     initialize().finally(() => clearTimeout(initTimeout))
   }, [initialize])
 
-  // Re-fetch events when date changes
+  // Re-fetch holidays when year changes
   useEffect(() => {
     if (!isInitialized) return
-    const { fetchEvents, fetchHolidays } = useCalendarStore.getState()
-
     const year = currentDate.getFullYear()
-    const month = currentDate.getMonth()
-
-    let start: string, end: string
-    if (currentView === 'year') {
-      start = `${year}-01-01`
-      end = `${year}-12-31`
-    } else if (currentView === 'month') {
-      start = `${year}-${String(month + 1).padStart(2, '0')}-01`
-      const lastDay = new Date(year, month + 1, 0).getDate()
-      end = `${year}-${String(month + 1).padStart(2, '0')}-${lastDay}`
-    } else if (currentView === 'week') {
-      const d = new Date(currentDate)
-      const dayOfWeek = d.getDay() || 7
-      const monday = new Date(d)
-      monday.setDate(d.getDate() - dayOfWeek + 1)
-      const sunday = new Date(monday)
-      sunday.setDate(monday.getDate() + 6)
-      start = format(monday, 'yyyy-MM-dd')
-      end = format(sunday, 'yyyy-MM-dd')
-    } else {
-      start = format(currentDate, 'yyyy-MM-dd')
-      end = format(currentDate, 'yyyy-MM-dd')
-    }
-
-    fetchEvents(start, end)
+    const { fetchHolidays } = useCalendarStore.getState()
     fetchHolidays(year)
   }, [currentDate, currentView, isInitialized])
 

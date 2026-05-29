@@ -69,6 +69,7 @@ export function EventDialog() {
     removeEvent,
     isReadOnly,
     currentUser,
+    entities,
   } = useCalendarStore()
 
   const [title, setTitle] = useState('')
@@ -79,6 +80,7 @@ export function EventDialog() {
   const [endTime, setEndTime] = useState('10:00')
   const [allDay, setAllDay] = useState(true)
   const [eventTypeId, setEventTypeId] = useState<string>('')
+  const [selectedEntityIds, setSelectedEntityIds] = useState<string[]>([])
   const [isSaving, setIsSaving] = useState(false)
 
   // Reset form state when dialog opens or editing event changes
@@ -95,6 +97,7 @@ export function EventDialog() {
         setEndTime(ed ? ed.slice(11, 16) || '10:00' : '10:00')
         setAllDay(editingEvent.allDay)
         setEventTypeId(editingEvent.eventTypeId || 'none')
+        setSelectedEntityIds(editingEvent.entityIds || [])
       } else if (selectedDate) {
         setTitle('')
         setDescription('')
@@ -104,6 +107,7 @@ export function EventDialog() {
         setEndTime('10:00')
         setAllDay(true)
         setEventTypeId('none')
+        setSelectedEntityIds([])
       }
     }
   }, [isEventDialogOpen, editingEvent, selectedDate])
@@ -127,6 +131,7 @@ export function EventDialog() {
         endDate: endDateTime,
         allDay,
         eventTypeId: eventTypeId === 'none' ? undefined : eventTypeId,
+        entityIds: selectedEntityIds.length > 0 ? selectedEntityIds : undefined,
         userId: currentUser?.id,
       }
 
@@ -284,6 +289,44 @@ export function EventDialog() {
               </Select>
             )}
           </div>
+
+          {/* Entity (主体) selector */}
+          {entities.length > 0 && (
+            <div className="space-y-2">
+              <Label>主体</Label>
+              {isReadOnly ? (
+                <p className="text-sm px-3 py-2 rounded-md bg-muted">
+                  {selectedEntityIds.length > 0
+                    ? selectedEntityIds.map(id => entities.find(e => e.id === id)?.name).filter(Boolean).join('、')
+                    : '无'}
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {entities.sort((a, b) => a.sortOrder - b.sortOrder).map((entity) => {
+                    const isSelected = selectedEntityIds.includes(entity.id)
+                    return (
+                      <Button
+                        key={entity.id}
+                        type="button"
+                        variant={isSelected ? 'default' : 'outline'}
+                        size="sm"
+                        className="h-7 text-xs"
+                        onClick={() => {
+                          setSelectedEntityIds(prev =>
+                            isSelected
+                              ? prev.filter(id => id !== entity.id)
+                              : [...prev, entity.id]
+                          )
+                        }}
+                      >
+                        {entity.name}
+                      </Button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Description */}
           <div className="space-y-2">

@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { title, description, startDate, endDate, allDay, eventTypeId, userId } = body;
+    const { title, description, startDate, endDate, allDay, eventTypeId, userId, entityIds } = body;
 
     if (!title) {
       return NextResponse.json(
@@ -138,6 +138,9 @@ export async function POST(request: NextRequest) {
         eventTypeId: eventTypeId || null,
         userId,
         createdById: userId,
+        eventEntities: entityIds && entityIds.length > 0 ? {
+          create: entityIds.map((entityId: string) => ({ entityId }))
+        } : undefined,
       },
       include: {
         eventType: true,
