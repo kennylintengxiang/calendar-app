@@ -168,7 +168,7 @@ export function WeekView() {
                       <div
                         key={event.id}
                         className={cn(
-                          'border-r p-0.5 cursor-pointer transition-opacity hover:opacity-80',
+                          'border-r p-0.5 cursor-pointer transition-opacity hover:opacity-80 min-w-0',
                           isToday(day) && 'bg-primary/[0.02]'
                         )}
                         style={evtType ? { backgroundColor: evtType.color + '10' } : {}}
@@ -177,7 +177,7 @@ export function WeekView() {
                       >
                         <div className="flex flex-col items-center gap-0.5 py-0.5">
                           {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
-                          <span className="text-[12px] leading-tight truncate w-full text-center" style={evtType ? { color: evtType.color } : {}}>
+                          <span className="text-[12px] leading-tight break-all w-full text-center max-w-[4em]" style={evtType ? { color: evtType.color } : {}}>
                             {headerTitle}
                           </span>
                         </div>
