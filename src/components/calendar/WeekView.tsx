@@ -13,7 +13,15 @@ import { cn } from '@/lib/utils'
 
 const WEEKDAYS_FULL = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 
-/** Build display text for an event: "事件名称" or "事件名称-备注" */
+/** Build display text for an event header in Week/Day view: show only "备注" if available, otherwise "事件名称" */
+function getEventHeaderTitle(event: { title: string; description?: string | null }): string {
+  if (event.description && event.description.trim()) {
+    return event.description.trim()
+  }
+  return event.title
+}
+
+/** Build full display text for tooltip: "事件名称-备注" */
 function getEventDisplayTitle(event: { title: string; description?: string | null }): string {
   if (event.description && event.description.trim()) {
     return `${event.title}-${event.description.trim()}`
@@ -162,7 +170,7 @@ export function WeekView() {
                   <div className="space-y-0.5">
                     {dayEvents.map((event) => {
                       const evtType = getEventType(event.eventTypeId)
-                      const displayTitle = getEventDisplayTitle(event)
+                      const headerTitle = getEventHeaderTitle(event)
                       return (
                         <div
                           key={event.id}
@@ -174,7 +182,7 @@ export function WeekView() {
                           onClick={(e) => handleEventClick(e, day, event.id)}
                         >
                           {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
-                          <span className="truncate">{displayTitle}</span>
+                          <span className="truncate">{headerTitle}</span>
                         </div>
                       )
                     })}
@@ -200,7 +208,9 @@ export function WeekView() {
                 <span className="truncate" title={entity.name}>{entity.name}</span>
               </div>
               {weekDays.map((day, dayIdx) => {
-                const dayEvents = getEventsForDateEntity(day, entity.id)
+                // Get all events for the day to maintain vertical alignment with header
+                const allDayEvents = getEventsForDate(day)
+                const entityEventIds = new Set(getEventsForDateEntity(day, entity.id).map(e => e.id))
                 return (
                   <div
                     key={dayIdx}
@@ -210,9 +220,14 @@ export function WeekView() {
                     )}
                     onClick={() => openEventDialog(day)}
                   >
-                    <div className="flex flex-wrap gap-0.5 items-center">
-                      {dayEvents.map((event) => {
+                    <div className="flex flex-col gap-0.5">
+                      {allDayEvents.slice(0, 6).map((event) => {
                         const evtType = getEventType(event.eventTypeId)
+                        const belongsToEntity = entityEventIds.has(event.id)
+                        if (!belongsToEntity) {
+                          // Empty placeholder to maintain vertical alignment
+                          return <div key={event.id} className="h-[16px]" />
+                        }
                         return (
                           <div
                             key={event.id}
@@ -223,7 +238,7 @@ export function WeekView() {
                             {evtType ? (
                               <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />
                             ) : (
-                              <div className="w-2 h-2 rounded-full bg-primary/40" />
+                              <div className="w-4 h-4 rounded-full bg-primary/40" />
                             )}
                           </div>
                         )
@@ -240,7 +255,8 @@ export function WeekView() {
               <span title="未分类">未分类</span>
             </div>
             {weekDays.map((day, dayIdx) => {
-              const dayEvents = getEventsForDateEntity(day)
+              const allDayEvents = getEventsForDate(day)
+              const uncatEventIds = new Set(getEventsForDateEntity(day).map(e => e.id))
               return (
                 <div
                   key={dayIdx}
@@ -250,9 +266,13 @@ export function WeekView() {
                   )}
                   onClick={() => openEventDialog(day)}
                 >
-                  <div className="flex flex-wrap gap-0.5 items-center">
-                    {dayEvents.map((event) => {
+                  <div className="flex flex-col gap-0.5">
+                    {allDayEvents.slice(0, 6).map((event) => {
                       const evtType = getEventType(event.eventTypeId)
+                      const belongsToEntity = uncatEventIds.has(event.id)
+                      if (!belongsToEntity) {
+                        return <div key={event.id} className="h-[16px]" />
+                      }
                       return (
                         <div
                           key={event.id}
@@ -263,7 +283,7 @@ export function WeekView() {
                           {evtType ? (
                             <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />
                           ) : (
-                            <div className="w-2 h-2 rounded-full bg-primary/40" />
+                            <div className="w-4 h-4 rounded-full bg-primary/40" />
                           )}
                         </div>
                       )
@@ -317,7 +337,7 @@ export function WeekView() {
                   <div className="space-y-0.5">
                     {dayEvents.slice(0, 6).map((event) => {
                       const evtType = getEventType(event.eventTypeId)
-                      const displayTitle = getEventDisplayTitle(event)
+                      const headerTitle = getEventHeaderTitle(event)
                       return (
                         <div
                           key={event.id}
@@ -329,7 +349,7 @@ export function WeekView() {
                           onClick={(e) => handleEventClick(e, day, event.id)}
                         >
                           {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
-                          <span className="truncate">{displayTitle}</span>
+                          <span className="truncate">{headerTitle}</span>
                         </div>
                       )
                     })}

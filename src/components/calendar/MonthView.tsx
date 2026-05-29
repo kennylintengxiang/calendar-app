@@ -203,7 +203,7 @@ export function MonthView() {
                         <div
                           key={event.id}
                           className={cn(
-                            'flex items-center gap-1 px-1 py-0.5 rounded text-[10px] sm:text-xs truncate transition-opacity hover:opacity-80',
+                            'flex items-center gap-1 px-1 py-0.5 rounded text-[14px] truncate transition-opacity hover:opacity-80',
                             evtType ? '' : 'bg-primary/10'
                           )}
                           style={
@@ -213,8 +213,8 @@ export function MonthView() {
                           }
                           onClick={(e) => handleEventClick(e, day, event.id)}
                         >
-                          {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
-                          <span className="truncate">{event.description?.trim() ? `${event.title}-${event.description.trim()}` : event.title}</span>
+                          {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={18} symbol={evtType.symbol} />}
+                          <span className="truncate">{event.title}</span>
                         </div>
                       )
                     })}

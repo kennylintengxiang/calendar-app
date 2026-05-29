@@ -10,7 +10,15 @@ import { useCalendarStore } from '@/store/calendar-store'
 import { EventShape } from './EventShape'
 import { cn } from '@/lib/utils'
 
-/** Build display text for an event: "事件名称" or "事件名称-备注" */
+/** Build display text for an event header in Week/Day view: show only "备注" if available, otherwise "事件名称" */
+function getEventHeaderTitle(event: { title: string; description?: string | null }): string {
+  if (event.description && event.description.trim()) {
+    return event.description.trim()
+  }
+  return event.title
+}
+
+/** Build full display text for tooltip: "事件名称-备注" */
 function getEventDisplayTitle(event: { title: string; description?: string | null }): string {
   if (event.description && event.description.trim()) {
     return `${event.title}-${event.description.trim()}`
@@ -125,7 +133,7 @@ export function DayView() {
                   <div className="space-y-0.5">
                     {displayEvents.map((event) => {
                       const evtType = getEventType(event.eventTypeId)
-                      const displayTitle = getEventDisplayTitle(event)
+                      const headerTitle = getEventHeaderTitle(event)
                       return (
                         <div
                           key={event.id}
@@ -137,7 +145,7 @@ export function DayView() {
                           onClick={(e) => handleEventClick(e, event.id)}
                         >
                           {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
-                          <span className="truncate">{displayTitle}</span>
+                          <span className="truncate">{headerTitle}</span>
                         </div>
                       )
                     })}
@@ -170,18 +178,24 @@ export function DayView() {
             </div>
           </div>
 
-          {/* Entity rows with dot indicators showing which entities have which events */}
+          {/* Entity rows with dot indicators showing which entities have which events - vertically aligned */}
           <div className="grid border-b" style={{ gridTemplateColumns: `120px repeat(${colCount}, 1fr)` }}>
             <div className="p-1.5 text-xs text-muted-foreground text-center border-r flex items-center justify-center bg-muted/10">
               事件分布
             </div>
             {entityCols.map((entity) => {
-              const entityEvents = getEventsForEntity(entity.id)
+              const entityEventIds = new Set(getEventsForEntity(entity.id).map(e => e.id))
+              const allDayEvents = getEventsForDate()
               return (
                 <div key={entity.id} className="border-r last:border-r-0 p-1.5 min-h-[32px]">
-                  <div className="flex flex-wrap gap-0.5 items-center">
-                    {entityEvents.map((event) => {
+                  <div className="flex flex-col gap-0.5">
+                    {allDayEvents.slice(0, 6).map((event) => {
                       const evtType = getEventType(event.eventTypeId)
+                      const belongsToEntity = entityEventIds.has(event.id)
+                      if (!belongsToEntity) {
+                        // Empty placeholder to maintain vertical alignment
+                        return <div key={event.id} className="h-[16px]" />
+                      }
                       return (
                         <div
                           key={event.id}
@@ -192,7 +206,7 @@ export function DayView() {
                           {evtType ? (
                             <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />
                           ) : (
-                            <div className="w-2 h-2 rounded-full bg-primary/40" />
+                            <div className="w-4 h-4 rounded-full bg-primary/40" />
                           )}
                         </div>
                       )
@@ -203,9 +217,14 @@ export function DayView() {
             })}
             {/* 未分类 column */}
             <div className="p-1.5 min-h-[32px]">
-              <div className="flex flex-wrap gap-0.5 items-center">
-                {getEventsForEntity().map((event) => {
+              <div className="flex flex-col gap-0.5">
+                {getEventsForDate().slice(0, 6).map((event) => {
                   const evtType = getEventType(event.eventTypeId)
+                  const uncatEventIds = new Set(getEventsForEntity().map(e => e.id))
+                  const belongsToUncat = uncatEventIds.has(event.id)
+                  if (!belongsToUncat) {
+                    return <div key={event.id} className="h-[16px]" />
+                  }
                   return (
                     <div
                       key={event.id}
@@ -216,7 +235,7 @@ export function DayView() {
                       {evtType ? (
                         <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />
                       ) : (
-                        <div className="w-2 h-2 rounded-full bg-primary/40" />
+                        <div className="w-4 h-4 rounded-full bg-primary/40" />
                       )}
                     </div>
                   )
@@ -250,7 +269,7 @@ export function DayView() {
               <div className="space-y-1 p-2">
                 {dayEvents.map((event) => {
                   const evtType = getEventType(event.eventTypeId)
-                  const displayTitle = getEventDisplayTitle(event)
+                  const headerTitle = getEventHeaderTitle(event)
                   return (
                     <div
                       key={event.id}
@@ -262,7 +281,7 @@ export function DayView() {
                       onClick={(e) => { e.stopPropagation(); openEventDialog(currentDate, event) }}
                     >
                       {evtType && <EventShape shape={evtType.shape} color={evtType.color} size={16} symbol={evtType.symbol} />}
-                      <span className="truncate font-medium">{displayTitle}</span>
+                      <span className="truncate font-medium">{headerTitle}</span>
                     </div>
                   )
                 })}
