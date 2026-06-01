@@ -20,6 +20,8 @@ export function UserSwitcher() {
     switchUser,
     createUser,
     deleteUser,
+    isAuthenticated,
+    openLoginDialog,
   } = useCalendarStore()
 
   const { toast } = useToast()
@@ -59,6 +61,11 @@ export function UserSwitcher() {
   }
 
   const handleDelete = async (id: string) => {
+    if (!isAuthenticated) {
+      toast({ title: '请先登录', description: '登录后才能删除用户', variant: 'destructive' })
+      openLoginDialog()
+      return
+    }
     if (users.length <= 1) {
       toast({ title: '无法删除', description: '至少需要保留一个用户', variant: 'destructive' })
       return
@@ -106,7 +113,7 @@ export function UserSwitcher() {
               {user.id === currentUser.id && (
                 <Check className="h-3.5 w-3.5 text-primary shrink-0" />
               )}
-              {user.id !== currentUser.id && users.length > 1 && (
+              {user.id !== currentUser.id && users.length > 1 && isAuthenticated && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -123,7 +130,19 @@ export function UserSwitcher() {
           ))}
 
           {/* Create new user */}
-          {showCreate ? (
+          {!isAuthenticated ? (
+            <Button
+              variant="ghost"
+              className="w-full h-8 text-xs gap-1 mt-1"
+              onClick={() => {
+                toast({ title: '请先登录', description: '登录后才能新增用户' })
+                openLoginDialog()
+              }}
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              新增用户
+            </Button>
+          ) : showCreate ? (
             <div className="p-2 border rounded-md mt-2 space-y-2">
               <Input
                 value={newUserName}
