@@ -13,7 +13,9 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
-  turbopack: {},
+  // Electron 构建时不启用 Turbopack（Windows 上内存溢出问题）
+  // 开发模式启用 Turbopack 加速
+  ...(isElectronBuild ? {} : { turbopack: {} }),
 };
 
 export default nextConfig;
