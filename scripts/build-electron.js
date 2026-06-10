@@ -6,9 +6,13 @@
  * 构建流程：
  * 1. 选择 SQLite schema
  * 2. 生成 Prisma Client
- * 3. 构建 Next.js standalone 产物
+ * 3. 构建 Next.js standalone 产物（或使用预构建产物）
  * 4. 复制必要文件到 standalone 目录
  * 5. 用 electron-builder 打包成安装程序
+ *
+ * 用法：
+ *   node scripts/build-electron.js --win          完整构建（Windows）
+ *   node scripts/build-electron.js --win --skip-build  跳过 Step 3（使用已有 .next/standalone）
  */
 
 const { execSync } = require('child_process')
@@ -16,7 +20,11 @@ const fs = require('fs')
 const path = require('path')
 
 const ROOT_DIR = path.join(__dirname, '..')
-const isWindows = process.platform === 'win32'
+
+// 解析命令行参数
+const args = process.argv.slice(2)
+const skipBuild = args.includes('--skip-build')
+const platformArg = args.find(a => !a.startsWith('--skip')) || ''
 
 function run(cmd, options = {}) {
   console.log(`\n▶ ${cmd}`)
@@ -46,46 +54,65 @@ console.log('========================================')
 console.log('  财务日历 - Electron 桌面版构建')
 console.log('========================================')
 
-// Step 1: 选择 SQLite schema
-console.log('\n📦 Step 1/5: 选择 SQLite schema...')
-runWithEnv('node scripts/select-schema.js', { DB_PROVIDER: 'sqlite' })
+if (skipBuild) {
+  console.log('\n⏭️  跳过 Step 1-3（使用预构建产物）')
+} else {
+  // Step 1: 选择 SQLite schema
+  console.log('\n📦 Step 1/5: 选择 SQLite schema...')
+  runWithEnv('node scripts/select-schema.js', { DB_PROVIDER: 'sqlite' })
 
-// Step 2: 生成 Prisma Client
-console.log('\n📦 Step 2/5: 生成 Prisma Client...')
-run('npx prisma generate')
+  // Step 2: 生成 Prisma Client
+  console.log('\n📦 Step 2/5: 生成 Prisma Client...')
+  run('npx prisma generate')
 
-// Step 3: 构建 Next.js standalone
-// 限制 Node.js 内存为 4GB，防止 Turbopack 内存溢出
-console.log('\n📦 Step 3/5: 构建 Next.js standalone...')
-runWithEnv('next build', { BUILD_TARGET: 'electron', NODE_OPTIONS: '--max-old-space-size=4096' })
+  // Step 3: 构建 Next.js standalone
+  console.log('\n📦 Step 3/5: 构建 Next.js standalone...')
+  runWithEnv('next build', { BUILD_TARGET: 'electron' })
+}
+
+// 检查 standalone 目录是否存在
+const standaloneDir = path.join(ROOT_DIR, '.next', 'standalone')
+if (!fs.existsSync(standaloneDir)) {
+  console.error('\n❌ 错误：.next/standalone 目录不存在！')
+  console.error('   请先运行完整构建，或使用预构建产物（--skip-build）')
+  console.error('   预构建产物使用方法：')
+  console.error('   1. 将 standalone-build.tar.gz 解压到 .next/ 目录')
+  console.error('   2. 运行：npm run electron:pack:win')
+  process.exit(1)
+}
 
 // Step 4: 复制必要文件到 standalone 目录
 console.log('\n📦 Step 4/5: 复制必要文件...')
 
-const standaloneDir = path.join(ROOT_DIR, '.next', 'standalone')
 const staticDir = path.join(ROOT_DIR, '.next', 'static')
 const publicDir = path.join(ROOT_DIR, 'public')
 const prismaDir = path.join(ROOT_DIR, 'prisma')
 
 // 复制 .next/static 到 standalone/.next/static
 const standaloneStaticDir = path.join(standaloneDir, '.next', 'static')
-if (fs.existsSync(staticDir)) {
+if (fs.existsSync(staticDir) && !fs.existsSync(standaloneStaticDir)) {
   copyRecursive(staticDir, standaloneStaticDir)
   console.log('  ✅ 复制 .next/static')
+} else if (fs.existsSync(standaloneStaticDir)) {
+  console.log('  ⏭️  .next/static 已存在，跳过')
 }
 
 // 复制 public 到 standalone/public
 const standalonePublicDir = path.join(standaloneDir, 'public')
-if (fs.existsSync(publicDir)) {
+if (fs.existsSync(publicDir) && !fs.existsSync(standalonePublicDir)) {
   copyRecursive(publicDir, standalonePublicDir)
   console.log('  ✅ 复制 public')
+} else if (fs.existsSync(standalonePublicDir)) {
+  console.log('  ⏭️  public 已存在，跳过')
 }
 
 // 复制 prisma schema 到 standalone/prisma
 const standalonePrismaDir = path.join(standaloneDir, 'prisma')
-if (fs.existsSync(prismaDir)) {
+if (fs.existsSync(prismaDir) && !fs.existsSync(standalonePrismaDir)) {
   copyRecursive(prismaDir, standalonePrismaDir)
   console.log('  ✅ 复制 prisma')
+} else if (fs.existsSync(standalonePrismaDir)) {
+  console.log('  ⏭️  prisma 已存在，跳过')
 }
 
 // 复制 Prisma 引擎文件到 standalone
@@ -104,7 +131,6 @@ if (!fs.existsSync(dbDir)) {
 }
 
 // Step 5: 用 electron-builder 打包
-const platformArg = process.argv[2] || ''
 let electronBuilderCmd = 'npx electron-builder'
 
 if (platformArg === '--win' || platformArg === '-w') {

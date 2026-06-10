@@ -17,7 +17,10 @@
     "electron:dev": "echo 请参考 electron/README.md 中的说明运行开发模式",
     "electron:build:win": "node scripts/build-electron.js --win",
     "electron:build:mac": "node scripts/build-electron.js --mac",
-    "electron:build:linux": "node scripts/build-electron.js --linux"
+    "electron:build:linux": "node scripts/build-electron.js --linux",
+    "electron:pack:win": "node scripts/build-electron.js --win --skip-build",
+    "electron:pack:mac": "node scripts/build-electron.js --mac --skip-build",
+    "electron:pack:linux": "node scripts/build-electron.js --linux --skip-build"
   },
   "main": "electron/main.js",
   "dependencies": {
