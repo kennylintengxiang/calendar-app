@@ -55,9 +55,9 @@ console.log('\n📦 Step 2/5: 生成 Prisma Client...')
 run('npx prisma generate')
 
 // Step 3: 构建 Next.js standalone
-// 使用 --no-turbopack 避免 Turbopack 内存溢出问题（32GB+）
-console.log('\n📦 Step 3/5: 构建 Next.js standalone（使用 Webpack，较稳定）...')
-runWithEnv('next build --no-turbopack', { BUILD_TARGET: 'electron' })
+// 限制 Node.js 内存为 4GB，防止 Turbopack 内存溢出
+console.log('\n📦 Step 3/5: 构建 Next.js standalone...')
+runWithEnv('next build', { BUILD_TARGET: 'electron', NODE_OPTIONS: '--max-old-space-size=4096' })
 
 // Step 4: 复制必要文件到 standalone 目录
 console.log('\n📦 Step 4/5: 复制必要文件...')
