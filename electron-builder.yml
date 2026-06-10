@@ -40,16 +40,14 @@ win:
     - target: nsis
       arch:
         - x64
-  icon: electron/build/icon.ico
+  # 不签名（没有代码签名证书，跳过签名步骤，避免 Windows 权限错误）
+  signAndEditExecutable: false
 
 # NSIS 安装程序配置
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   allowElevation: true
-  installerIcon: electron/build/icon.ico
-  uninstallerIcon: electron/build/icon.ico
-  installerHeaderIcon: electron/build/icon.ico
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: 财务日历
