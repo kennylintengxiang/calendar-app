@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select'
 import { useCalendarStore, CalendarEventType, Entity } from '@/store/calendar-store'
 import { EventShape, SHAPE_OPTIONS } from './EventShape'
-import { Trash2, Plus, RefreshCw, GripVertical, ChevronUp, ChevronDown, Shield } from 'lucide-react'
+import { Trash2, Plus, RefreshCw, GripVertical, ChevronUp, ChevronDown, Shield, Download, Upload, Database, AlertTriangle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
 
@@ -71,6 +71,9 @@ export function SettingsDialog() {
               {isLoadingHolidays ? '获取中...' : '获取最新节假日'}
             </Button>
           </div>
+
+          {/* Data Migration */}
+          <DataMigrationSection />
         </div>
       </DialogContent>
     </Dialog>
@@ -1243,5 +1246,313 @@ function EventTypeSection() {
         })}
       </div>
     </div>
+  )
+}
+
+// =====================
+// Data Migration Section
+// =====================
+function DataMigrationSection() {
+  const { initialize } = useCalendarStore()
+  const { toast } = useToast()
+  const [isExporting, setIsExporting] = useState(false)
+  const [isImporting, setIsImporting] = useState(false)
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('replace')
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importResult, setImportResult] = useState<Record<string, { imported: number; skipped: number }> | null>(null)
+  const [showReplaceConfirm, setShowReplaceConfirm] = useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
+
+  const handleExport = async () => {
+    setIsExporting(true)
+    try {
+      const res = await fetch('/api/data/export')
+      if (res.ok) {
+        const blob = await res.blob()
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        const contentDisposition = res.headers.get('Content-Disposition')
+        const filename = contentDisposition
+          ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
+          : `calendar-backup-${new Date().toISOString().slice(0, 10)}.json`
+        a.download = filename
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        toast({ title: '导出成功', description: '数据已保存为 JSON 文件' })
+      } else {
+        toast({ title: '导出失败', variant: 'destructive' })
+      }
+    } catch {
+      toast({ title: '导出失败', description: '网络错误', variant: 'destructive' })
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setImportFile(file)
+      setImportResult(null)
+      setShowReplaceConfirm(false)
+    }
+  }
+
+  const handleImport = async () => {
+    if (!importFile) return
+
+    if (importMode === 'replace' && !showReplaceConfirm) {
+      setShowReplaceConfirm(true)
+      return
+    }
+
+    setIsImporting(true)
+    setShowReplaceConfirm(false)
+    try {
+      const fileContent = await importFile.text()
+      const data = JSON.parse(fileContent)
+
+      const res = await fetch('/api/data/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, mode: importMode }),
+      })
+
+      if (res.ok) {
+        const result = await res.json()
+        setImportResult(result.result)
+        toast({
+          title: '导入成功',
+          description: `已导入 ${result.result.events.imported} 个事件、${result.result.accounts.imported} 个账号`,
+        })
+        // Re-initialize the app to refresh all data
+        await initialize()
+      } else {
+        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }))
+        toast({ title: '导入失败', description: errorData.error, variant: 'destructive' })
+      }
+    } catch (e) {
+      toast({
+        title: '导入失败',
+        description: e instanceof Error ? e.message : '文件格式错误',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  const resetImport = () => {
+    setImportFile(null)
+    setImportResult(null)
+    setShowReplaceConfirm(false)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Database className="h-4 w-4 text-primary" />
+        <h3 className="text-sm font-semibold">数据迁移</h3>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        将数据从一个日历实例迁移到另一个实例。例如：从 Supabase 网页版导出数据，再导入到本地桌面版。
+      </p>
+
+      {/* Export */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Download className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium">导出数据</span>
+        </div>
+        <p className="text-[11px] text-muted-foreground ml-5">
+          将当前所有数据（账号、用户、事件、类型、主体等）导出为 JSON 文件
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-5 h-7 text-xs"
+          onClick={handleExport}
+          disabled={isExporting}
+        >
+          {isExporting ? '导出中...' : '导出全部数据'}
+        </Button>
+      </div>
+
+      <div className="border-t my-2" />
+
+      {/* Import */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-medium">导入数据</span>
+        </div>
+
+        {/* Mode selection */}
+        <div className="ml-5 space-y-2">
+          <div className="flex items-center gap-3">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="importMode"
+                value="replace"
+                checked={importMode === 'replace'}
+                onChange={() => { setImportMode('replace'); setImportResult(null); setShowReplaceConfirm(false) }}
+                className="accent-primary"
+              />
+              <span className="text-xs">替换（清除现有数据后导入）</span>
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="radio"
+                name="importMode"
+                value="merge"
+                checked={importMode === 'merge'}
+                onChange={() => { setImportMode('merge'); setImportResult(null); setShowReplaceConfirm(false) }}
+                className="accent-primary"
+              />
+              <span className="text-xs">合并（跳过已有记录）</span>
+            </label>
+          </div>
+
+          {importMode === 'replace' && (
+            <div className="flex items-start gap-1.5 p-2 bg-amber-50 dark:bg-amber-900/20 rounded text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+              <span className="text-[11px]">替换模式会删除当前所有数据，然后导入备份数据。此操作不可撤销！</span>
+            </div>
+          )}
+        </div>
+
+        {/* File input */}
+        <div className="ml-5">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          {importFile ? (
+            <div className="flex items-center gap-2 p-2 border rounded-lg bg-muted/30">
+              <FileJsonIcon className="h-4 w-4 text-primary flex-shrink-0" />
+              <span className="text-xs flex-1 truncate">{importFile.name}</span>
+              <span className="text-[10px] text-muted-foreground">
+                {(importFile.size / 1024).toFixed(1)} KB
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[10px] px-1.5"
+                onClick={resetImport}
+              >
+                移除
+              </Button>
+            </div>
+          ) : (
+            <button
+              className="w-full border-2 border-dashed rounded-lg p-3 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-colors"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="h-5 w-5 mx-auto text-muted-foreground" />
+              <p className="text-xs text-muted-foreground mt-1">点击选择备份文件 (.json)</p>
+            </button>
+          )}
+        </div>
+
+        {/* Replace confirmation */}
+        {showReplaceConfirm && importMode === 'replace' && (
+          <div className="ml-5 p-2 border border-destructive/50 rounded-lg bg-destructive/5">
+            <p className="text-xs text-destructive font-medium mb-2">
+              确定要替换所有数据吗？此操作不可撤销！
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-7 text-xs"
+                onClick={handleImport}
+                disabled={isImporting}
+              >
+                {isImporting ? '导入中...' : '确认替换并导入'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                onClick={() => setShowReplaceConfirm(false)}
+              >
+                取消
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Import button (for merge mode or when not showing confirm) */}
+        {importFile && !showReplaceConfirm && !importResult && (
+          <div className="ml-5">
+            <Button
+              size="sm"
+              className="h-7 text-xs"
+              onClick={handleImport}
+              disabled={isImporting}
+            >
+              {isImporting ? '导入中...' : importMode === 'replace' ? '替换并导入' : '合并导入'}
+            </Button>
+          </div>
+        )}
+
+        {/* Import result */}
+        {importResult && (
+          <div className="ml-5 p-2 border rounded-lg bg-green-50 dark:bg-green-900/20 space-y-1">
+            <p className="text-xs font-medium text-green-700 dark:text-green-400">导入完成</p>
+            <div className="text-[11px] text-green-600 dark:text-green-500 space-y-0.5">
+              {importResult.accounts.imported > 0 && <p>账号: {importResult.accounts.imported} 个导入, {importResult.accounts.skipped} 个跳过</p>}
+              {importResult.users.imported > 0 && <p>用户: {importResult.users.imported} 个导入, {importResult.users.skipped} 个跳过</p>}
+              {importResult.eventTypes.imported > 0 && <p>事件类型: {importResult.eventTypes.imported} 个导入, {importResult.eventTypes.skipped} 个跳过</p>}
+              {importResult.entities.imported > 0 && <p>主体: {importResult.entities.imported} 个导入, {importResult.entities.skipped} 个跳过</p>}
+              {importResult.events.imported > 0 && <p>事件: {importResult.events.imported} 个导入, {importResult.events.skipped} 个跳过</p>}
+              {importResult.eventEntities.imported > 0 && <p>事件-主体关联: {importResult.eventEntities.imported} 个导入</p>}
+              {importResult.dayColorSettings.imported > 0 && <p>日期颜色: {importResult.dayColorSettings.imported} 个导入</p>}
+              {importResult.holidays.imported > 0 && <p>节假日: {importResult.holidays.imported} 个导入</p>}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs mt-1"
+              onClick={resetImport}
+            >
+              完成
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function FileJsonIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
+      <polyline points="14 2 14 8 20 8" />
+      <path d="M10 12v6" />
+      <path d="M8 15h4" />
+      <path d="M8 18h1" />
+    </svg>
   )
 }
