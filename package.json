@@ -1,6 +1,6 @@
 {
   "name": "calendar-app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
@@ -13,8 +13,13 @@
     "db:push": "node scripts/select-schema.js && npx prisma db push",
     "db:generate": "node scripts/select-schema.js && npx prisma generate",
     "db:switch:sqlite": "DB_PROVIDER=sqlite node scripts/select-schema.js && npx prisma generate && npx prisma db push",
-    "db:switch:pg": "DB_PROVIDER=postgresql node scripts/select-schema.js && npx prisma generate && npx prisma db push"
+    "db:switch:pg": "DB_PROVIDER=postgresql node scripts/select-schema.js && npx prisma generate && npx prisma db push",
+    "electron:dev": "echo 请参考 electron/README.md 中的说明运行开发模式",
+    "electron:build:win": "node scripts/build-electron.js --win",
+    "electron:build:mac": "node scripts/build-electron.js --mac",
+    "electron:build:linux": "node scripts/build-electron.js --linux"
   },
+  "main": "electron/main.js",
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
@@ -88,6 +93,8 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "^16.1.1",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "prisma": "^6.11.1",
     "tailwindcss": "^4",
     "tw-animate-css": "^1.3.5",

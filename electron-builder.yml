@@ -1,0 +1,83 @@
+# Electron Builder 配置
+# 详细文档: https://www.electron.build/
+
+appId: com.calendar-app.desktop
+productName: 财务日历
+copyright: Copyright © 2025
+
+# 目录配置
+directories:
+  output: dist-electron
+  buildResources: electron/build
+
+# 文件包含规则
+files:
+  - electron/**/*
+  - "!electron/build/**/*"
+
+# 额外资源：Next.js standalone 产物
+extraResources:
+  - from: .next/standalone
+    to: standalone
+    filter:
+      - "**/*"
+  - from: .next/static
+    to: standalone/.next/static
+    filter:
+      - "**/*"
+  - from: public
+    to: standalone/public
+    filter:
+      - "**/*"
+  - from: prisma
+    to: standalone/prisma
+    filter:
+      - "**/*.prisma"
+
+# Windows 配置
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: electron/build/icon.ico
+
+# NSIS 安装程序配置
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  installerIcon: electron/build/icon.ico
+  uninstallerIcon: electron/build/icon.ico
+  installerHeaderIcon: electron/build/icon.ico
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: 财务日历
+  artifactName: 财务日历-Setup-${version}.${ext}
+
+# macOS 配置
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  icon: electron/build/icon.icns
+  category: public.app-category.productivity
+  artifactName: 财务日历-${version}-${arch}.${ext}
+
+# Linux 配置
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  icon: electron/build/icon.png
+  category: Office
+  artifactName: 财务日历-${version}.${ext}
+
+# 不打包进 asar 的文件（需要运行时访问）
+asarUnpack:
+  - "**/*.node"
+  - "**/prisma/**/*"
+  - "**/standalone/**/*"

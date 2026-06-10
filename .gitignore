@@ -57,6 +57,9 @@ server.log
 *.db
 *.db-journal
 
+# Electron build output
+/dist-electron/
+
 # Sandbox-only files (不需要部署到 Vercel)
 /examples/
 /download/
