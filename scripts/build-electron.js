@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Electron 构建脚本
+ * Electron 构建脚本（Windows/Mac/Linux 兼容）
  *
  * 构建流程：
  * 1. 选择 SQLite schema
@@ -16,10 +16,17 @@ const fs = require('fs')
 const path = require('path')
 
 const ROOT_DIR = path.join(__dirname, '..')
+const isWindows = process.platform === 'win32'
 
 function run(cmd, options = {}) {
   console.log(`\n▶ ${cmd}`)
-  execSync(cmd, { stdio: 'inherit', cwd: ROOT_DIR, ...options })
+  execSync(cmd, { stdio: 'inherit', cwd: ROOT_DIR, shell: true, ...options })
+}
+
+function runWithEnv(cmd, envVars, options = {}) {
+  console.log(`\n▶ ${cmd} (env: ${JSON.stringify(envVars)})`)
+  const env = { ...process.env, ...envVars }
+  execSync(cmd, { stdio: 'inherit', cwd: ROOT_DIR, shell: true, env, ...options })
 }
 
 function copyRecursive(src, dest) {
@@ -41,7 +48,7 @@ console.log('========================================')
 
 // Step 1: 选择 SQLite schema
 console.log('\n📦 Step 1/5: 选择 SQLite schema...')
-run('DB_PROVIDER=sqlite node scripts/select-schema.js')
+runWithEnv('node scripts/select-schema.js', { DB_PROVIDER: 'sqlite' })
 
 // Step 2: 生成 Prisma Client
 console.log('\n📦 Step 2/5: 生成 Prisma Client...')
@@ -49,7 +56,7 @@ run('npx prisma generate')
 
 // Step 3: 构建 Next.js standalone
 console.log('\n📦 Step 3/5: 构建 Next.js standalone...')
-run('BUILD_TARGET=electron next build')
+runWithEnv('next build', { BUILD_TARGET: 'electron' })
 
 // Step 4: 复制必要文件到 standalone 目录
 console.log('\n📦 Step 4/5: 复制必要文件...')
@@ -81,7 +88,6 @@ if (fs.existsSync(prismaDir)) {
 }
 
 // 复制 Prisma 引擎文件到 standalone
-// Prisma 引擎通常在 node_modules/.prisma/client 或 node_modules/@prisma/engines
 const prismaEnginesDir = path.join(ROOT_DIR, 'node_modules', '.prisma', 'client')
 if (fs.existsSync(prismaEnginesDir)) {
   const standaloneEnginesDir = path.join(standaloneDir, 'node_modules', '.prisma', 'client')
@@ -97,7 +103,6 @@ if (!fs.existsSync(dbDir)) {
 }
 
 // Step 5: 用 electron-builder 打包
-// 从命令行参数获取目标平台，默认为当前平台
 const platformArg = process.argv[2] || ''
 let electronBuilderCmd = 'npx electron-builder'
 
