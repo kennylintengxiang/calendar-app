@@ -128,6 +128,57 @@ if (fs.existsSync(prismaEnginesDir)) {
   console.log('  ✅ 复制 Prisma 引擎')
 }
 
+// 复制 Prisma CLI 到 standalone（运行时需要 prisma db push 来创建表结构）
+// Next.js standalone 输出不包含 devDependencies 中的包，
+// 但 Electron 运行时需要 prisma CLI 来初始化数据库
+const prismaCliDir = path.join(ROOT_DIR, 'node_modules', 'prisma')
+if (fs.existsSync(prismaCliDir)) {
+  const standalonePrismaCliDir = path.join(standaloneDir, 'node_modules', 'prisma')
+  copyRecursive(prismaCliDir, standalonePrismaCliDir)
+  console.log('  ✅ 复制 Prisma CLI')
+
+  // 重建 .bin/prisma 入口脚本
+  // 注意：不能使用 symlink，因为 Windows 上可能没有创建 symlink 的权限
+  // 使用 fork() 直接调用 JS 入口文件，所以需要确保 build/index.js 存在
+  const standaloneBinDir = path.join(standaloneDir, 'node_modules', '.bin')
+  if (!fs.existsSync(standaloneBinDir)) {
+    fs.mkdirSync(standaloneBinDir, { recursive: true })
+  }
+  const prismaCjsEntry = path.join(standalonePrismaCliDir, 'build', 'index.js')
+  if (fs.existsSync(prismaCjsEntry)) {
+    // Unix 风格入口脚本
+    const prismaBinTarget = path.join(standaloneBinDir, 'prisma')
+    fs.writeFileSync(prismaBinTarget, `#!/usr/bin/env node\nrequire('../prisma/build/index.js');\n`)
+    console.log('  ✅ 创建 Prisma CLI 入口脚本')
+  } else {
+    console.log('  ⚠️ Prisma CLI 入口不存在: ' + prismaCjsEntry)
+  }
+
+  // 同时复制 @prisma 相关依赖（prisma CLI 依赖这些包）
+  const prismaEnginesPkg = path.join(ROOT_DIR, 'node_modules', '@prisma', 'engines')
+  if (fs.existsSync(prismaEnginesPkg)) {
+    const standaloneEnginesPkg = path.join(standaloneDir, 'node_modules', '@prisma', 'engines')
+    copyRecursive(prismaEnginesPkg, standaloneEnginesPkg)
+    console.log('  ✅ 复制 @prisma/engines')
+  }
+
+  const prismaGetIntrospectionPkg = path.join(ROOT_DIR, 'node_modules', '@prisma', 'introspection')
+  if (fs.existsSync(prismaGetIntrospectionPkg)) {
+    const standaloneIntrospectionPkg = path.join(standaloneDir, 'node_modules', '@prisma', 'introspection')
+    copyRecursive(prismaGetIntrospectionPkg, standaloneIntrospectionPkg)
+    console.log('  ✅ 复制 @prisma/introspection')
+  }
+
+  const prismaMigratePkg = path.join(ROOT_DIR, 'node_modules', '@prisma', 'migrate')
+  if (fs.existsSync(prismaMigratePkg)) {
+    const standaloneMigratePkg = path.join(standaloneDir, 'node_modules', '@prisma', 'migrate')
+    copyRecursive(prismaMigratePkg, standaloneMigratePkg)
+    console.log('  ✅ 复制 @prisma/migrate')
+  }
+} else {
+  console.log('  ⚠️ 未找到 Prisma CLI 包，跳过（运行时 db push 将不可用）')
+}
+
 // 创建 db 目录在 standalone 中
 const dbDir = path.join(standaloneDir, 'db')
 if (!fs.existsSync(dbDir)) {

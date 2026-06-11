@@ -11,7 +11,9 @@ import fs from 'fs'
  *
  * Electron 环境：
  * - DATABASE_URL 由 electron/main.js 动态设置为 userData 目录下的 calendar.db
- * - 首次启动时数据库文件不存在，Prisma 会自动创建
+ * - 首次启动时数据库文件不存在，Prisma 会自动创建空的 .db 文件
+ * - 但 Prisma 不会自动创建表结构！需要 electron/main.js 中的 initDatabase()
+ *   在服务器启动前运行 prisma db push 来创建表
  *
  * Supabase 兼容性：
  * - Supabase Transaction pooler (pgbouncer) 不支持 prepared statements

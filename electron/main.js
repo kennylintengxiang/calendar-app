@@ -40,6 +40,116 @@ function log(msg) {
 }
 
 /**
+ * 初始化数据库：运行 prisma db push 创建表结构
+ *
+ * Prisma 连接 SQLite 时只会自动创建空的数据库文件，
+ * 不会自动创建表结构（schema）。必须运行 prisma db push
+ * 或 prisma migrate deploy 来创建表。
+ *
+ * 此函数在服务器启动前调用，确保数据库表结构已就绪。
+ *
+ * 使用 fork() 而不是 spawn() 来运行 Prisma CLI，
+ * 这样可以复用 Electron 内置的 Node.js，不需要用户单独安装 Node.js。
+ */
+function initDatabase() {
+  return new Promise((resolve) => {
+    const dbPath = getDatabasePath()
+    const isDev = !app.isPackaged
+
+    let prismaEntry, cwd, env
+
+    if (isDev) {
+      // 开发模式：使用项目本地的 prisma CLI 入口
+      prismaEntry = path.join(__dirname, '..', 'node_modules', 'prisma', 'build', 'index.js')
+      cwd = path.join(__dirname, '..')
+      env = {
+        ...process.env,
+        DATABASE_URL: `file:${dbPath}`,
+      }
+    } else {
+      // 生产模式：使用 standalone 目录下的 prisma CLI 入口
+      const serverPath = path.join(process.resourcesPath, 'standalone')
+      prismaEntry = path.join(serverPath, 'node_modules', 'prisma', 'build', 'index.js')
+      cwd = serverPath
+      env = {
+        ...process.env,
+        DATABASE_URL: `file:${dbPath}`,
+      }
+    }
+
+    log(`初始化数据库: prisma db push, DATABASE_URL=file:${dbPath}`)
+    log(`Prisma CLI 入口: ${prismaEntry}`)
+    log(`CWD: ${cwd}`)
+
+    // 检查 Prisma CLI 入口是否存在
+    if (!fs.existsSync(prismaEntry)) {
+      log(`⚠️ Prisma CLI 入口不存在: ${prismaEntry}`)
+      log(`   尝试备用路径...`)
+
+      // 备用：尝试 .bin 目录下的 prisma
+      if (isDev) {
+        prismaEntry = path.join(__dirname, '..', 'node_modules', '.bin', 'prisma')
+      } else {
+        const serverPath = path.join(process.resourcesPath, 'standalone')
+        prismaEntry = path.join(serverPath, 'node_modules', '.bin', 'prisma')
+      }
+
+      if (!fs.existsSync(prismaEntry)) {
+        log(`❌ 备用路径也不存在: ${prismaEntry}，跳过数据库初始化`)
+        log(`   提示：数据库操作可能会失败，因为表结构未创建`)
+        resolve(false)
+        return
+      }
+
+      log(`✅ 找到备用路径: ${prismaEntry}`)
+    }
+
+    // 使用 fork 运行 Prisma CLI，复用 Electron 内置的 Node.js
+    // 这样不需要用户系统上安装 Node.js
+    const prismaProcess = fork(prismaEntry, ['db', 'push', '--accept-data-loss'], {
+      cwd,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
+      silent: true,
+    })
+
+    prismaProcess.stdout?.on('data', (data) => {
+      const output = data.toString()
+      log(`[Prisma stdout] ${output.trim()}`)
+    })
+
+    prismaProcess.stderr?.on('data', (data) => {
+      const output = data.toString()
+      log(`[Prisma stderr] ${output.trim()}`)
+    })
+
+    prismaProcess.on('error', (err) => {
+      log(`Prisma db push 启动失败: ${err.message}`)
+      // 不阻断启动，服务器可能会在运行时报更具体的错误
+      resolve(false)
+    })
+
+    prismaProcess.on('close', (code) => {
+      if (code === 0) {
+        log('✅ 数据库初始化完成')
+        resolve(true)
+      } else {
+        log(`⚠️ Prisma db push 退出码: ${code}`)
+        // 不阻断启动，让服务器尝试运行
+        resolve(false)
+      }
+    })
+
+    // 超时保护：30秒后如果还没完成，继续启动
+    // 首次 db push 可能需要下载引擎，给更长时间
+    setTimeout(() => {
+      log('⚠️ Prisma db push 超时（30秒），继续启动服务器')
+      resolve(false)
+    }, 30000)
+  })
+}
+
+/**
  * 启动 Next.js standalone 服务器
  */
 function startServer() {
@@ -334,6 +444,12 @@ app.whenReady().then(async () => {
   log(`是否打包: ${!app.isPackaged ? '否(开发)' : '是(生产)'}`)
 
   try {
+    // 在启动服务器前，先初始化数据库（创建表结构）
+    // Prisma 不会自动创建 SQLite 表，必须先运行 prisma db push
+    log('正在初始化数据库...')
+    await initDatabase()
+    log('数据库初始化步骤完成，启动服务器...')
+
     await startServer()
     log('服务器启动完成，等待连接...')
 
