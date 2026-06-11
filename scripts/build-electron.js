@@ -187,36 +187,104 @@ if (!fs.existsSync(dbDir)) {
 }
 
 // ========================================================
-// 关键修复：为 Turbopack 的哈希模块名创建别名
+// 关键修复：修复 Turbopack 的哈希模块名
 //
 // Next.js 16 的 Turbopack 构建会给外部包生成带哈希后缀的模块名，
 // 例如 @prisma/client-2c3a283f134fdcb6。
 // 在 standalone 模式下，Node.js require() 无法找到这些带哈希的包名。
-// 解决方法：在 node_modules 中创建对应的目录，作为真实包的别名。
+//
+// 修复策略（双重保障）：
+// 1. 直接在 JS 文件中替换哈希模块名为真实模块名（最可靠）
+// 2. 在 node_modules 中创建别名目录作为兜底
 // ========================================================
-console.log('\n  🔍 扫描 Turbopack 哈希模块名...')
-const chunksDir = path.join(standaloneDir, '.next', 'server', 'chunks')
-if (fs.existsSync(chunksDir)) {
-  // 扫描所有 chunk 文件，查找带哈希后缀的外部模块引用
-  const chunkFiles = fs.readdirSync(chunksDir).filter(f => f.startsWith('[root-of-the-server]'))
-  const hashedModules = new Set()
+console.log('\n  🔍 扫描 Turbopack 哈希模块名（递归扫描所有 JS 文件）...')
 
-  for (const chunkFile of chunkFiles) {
-    const content = fs.readFileSync(path.join(chunksDir, chunkFile), 'utf-8')
-    // 匹配模式: e.x("@prisma/client-XXXX",()=>require("@prisma/client-XXXX"))
-    const matches = content.matchAll(/require\("(@prisma\/client-[a-f0-9]+)"\)/g)
-    for (const match of matches) {
-      hashedModules.add(match[1])
+// 递归扫描目录下的所有 .js 文件
+function scanJsFiles(dir, fileList = []) {
+  if (!fs.existsSync(dir)) return fileList
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name)
+    if (entry.isDirectory()) {
+      scanJsFiles(fullPath, fileList)
+    } else if (entry.name.endsWith('.js') || entry.name.endsWith('.mjs')) {
+      fileList.push(fullPath)
     }
   }
+  return fileList
+}
 
+const nextDir = path.join(standaloneDir, '.next')
+const allJsFiles = scanJsFiles(nextDir)
+console.log(`  📄 扫描到 ${allJsFiles.length} 个 JS 文件`)
+
+// 收集所有哈希模块名
+const hashedModules = new Set()
+// 匹配模式: @prisma/client-XXXX 或 .prisma/client-XXXX
+const hashedModuleRegex = /(@prisma\/client-[a-f0-9]+)|(\.prisma\/client-[a-f0-9]+)/g
+
+for (const filePath of allJsFiles) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8')
+    const matches = content.matchAll(hashedModuleRegex)
+    for (const match of matches) {
+      hashedModules.add(match[0])
+    }
+  } catch (e) {
+    // 跳过无法读取的文件
+  }
+}
+
+if (hashedModules.size > 0) {
   for (const hashedModule of hashedModules) {
     console.log(`  📦 发现哈希模块: ${hashedModule}`)
 
     // 提取原始包名（去掉哈希后缀）
-    const originalPackage = hashedModule.replace(/-[a-f0-9]{16}$/, '')
-    const hashedDir = path.join(standaloneDir, 'node_modules', hashedModule)
-    const originalDir = path.join(standaloneDir, 'node_modules', originalPackage)
+    const originalPackage = hashedModule.replace(/-[a-f0-9]{12,}$/, '')
+    console.log(`     原始包名: ${originalPackage}`)
+  }
+
+  // 修复策略 1：直接替换 JS 文件中的哈希模块名为真实模块名
+  console.log('\n  🔧 修复策略 1：替换 JS 文件中的哈希模块名...')
+  let totalReplacements = 0
+
+  for (const filePath of allJsFiles) {
+    try {
+      let content = fs.readFileSync(filePath, 'utf-8')
+      let modified = false
+
+      for (const hashedModule of hashedModules) {
+        const originalPackage = hashedModule.replace(/-[a-f0-9]{12,}$/, '')
+        if (content.includes(hashedModule)) {
+          content = content.split(hashedModule).join(originalPackage)
+          modified = true
+          const count = (content.match(new RegExp(originalPackage.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length
+          totalReplacements++
+        }
+      }
+
+      if (modified) {
+        fs.writeFileSync(filePath, content, 'utf-8')
+        const relPath = path.relative(standaloneDir, filePath)
+        console.log(`     ✅ 替换文件: ${relPath}`)
+      }
+    } catch (e) {
+      // 跳过无法修改的文件
+    }
+  }
+
+  console.log(`  ✅ 共替换 ${totalReplacements} 个文件`)
+
+  // 修复策略 2：在 node_modules 中创建别名目录作为兜底
+  console.log('\n  🔧 修复策略 2：创建 node_modules 别名目录...')
+  for (const hashedModule of hashedModules) {
+    const originalPackage = hashedModule.replace(/-[a-f0-9]{12,}$/, '')
+
+    // 处理 @prisma/client 或 .prisma/client 格式
+    const hashedParts = hashedModule.split('/')
+    const originalParts = originalPackage.split('/')
+    const hashedDir = path.join(standaloneDir, 'node_modules', ...hashedParts)
+    const originalDir = path.join(standaloneDir, 'node_modules', ...originalParts)
 
     if (!fs.existsSync(hashedDir)) {
       if (fs.existsSync(originalDir)) {
@@ -241,16 +309,14 @@ if (fs.existsSync(chunksDir)) {
 
         console.log(`  ✅ 创建别名: ${hashedModule} → ${originalPackage}`)
       } else {
-        console.log(`  ⚠️ 原始包 ${originalPackage} 不存在，无法创建别名`)
+        console.log(`  ⚠️ 原始包 ${originalPackage} 不存在 (路径: ${originalDir})，无法创建别名`)
       }
     } else {
       console.log(`  ⏭️ 别名目录已存在: ${hashedModule}`)
     }
   }
-
-  if (hashedModules.size === 0) {
-    console.log('  ✅ 未发现哈希模块（可能已通过 serverExternalPackages 解决）')
-  }
+} else {
+  console.log('  ✅ 未发现哈希模块（可能已通过 serverExternalPackages 解决）')
 }
 
 // Step 5: 用 electron-builder 打包
