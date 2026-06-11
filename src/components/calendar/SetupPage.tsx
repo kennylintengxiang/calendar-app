@@ -61,10 +61,9 @@ export function SetupPage({ onSetupSuccess }: SetupPageProps) {
       if (res.ok) {
         onSetupSuccess(data.account)
       } else {
-        // 显示后端返回的具体错误信息，方便排查
-        const errMsg = data.error || '初始化失败'
-        const detail = data.details ? ` (${data.details.substring(0, 200)})` : ''
-        setError(errMsg + detail)
+        // 显示后端返回的具体错误信息，不再吞掉错误
+        const errMsg = data.error || data.details || '初始化失败'
+        setError(typeof errMsg === 'string' ? errMsg.substring(0, 500) : String(errMsg))
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : '网络错误，请稍后重试')
@@ -161,9 +160,9 @@ export function SetupPage({ onSetupSuccess }: SetupPageProps) {
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
-              <AlertCircle className="h-4 w-4 flex-shrink-0" />
-              <span>{error}</span>
+            <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
+              <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <span className="break-all">{error}</span>
             </div>
           )}
 

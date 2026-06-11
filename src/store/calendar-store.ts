@@ -1179,9 +1179,17 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         }
         return account
       }
-      // 返回 API 返回的具体错误信息
-      const errorData = await res.json().catch(() => ({ error: '设置失败' }))
-      throw new Error(errorData.error || '设置失败')
+      // 读取原始响应文本，无论是否为有效 JSON
+      const rawText = await res.text().catch(() => '')
+      let errorMsg = ''
+      try {
+        const parsed = JSON.parse(rawText)
+        errorMsg = parsed.error || parsed.details || ''
+      } catch {
+        // 不是 JSON，使用原始文本
+        errorMsg = rawText.substring(0, 300)
+      }
+      throw new Error(errorMsg || `请求失败 (HTTP ${res.status})`)
     } catch (e) {
       if (e instanceof Error) throw e
       throw new Error('设置失败，请稍后重试')

@@ -68,8 +68,9 @@ export function LoginDialog() {
         setError('设置失败，请检查网络或查看日志')
       }
     } catch (e) {
-      // 显示后端返回的具体错误信息
-      setError(e instanceof Error ? e.message : '设置失败，请稍后重试')
+      // 显示后端返回的完整错误信息（不再吞掉）
+      const msg = e instanceof Error ? e.message : '设置失败，请稍后重试'
+      setError(msg.substring(0, 500))
     } finally {
       setIsLoading(false)
     }
@@ -136,9 +137,9 @@ export function LoginDialog() {
               </div>
             </div>
             {error && (
-              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                <span>{error}</span>
+              <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
+                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                <span className="break-all">{error}</span>
               </div>
             )}
             <Button type="submit" className="w-full h-9" disabled={isLoading || !username || !password}>
@@ -195,9 +196,9 @@ export function LoginDialog() {
               />
             </div>
             {error && (
-              <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                <span>{error}</span>
+              <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
+                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                <span className="break-all">{error}</span>
               </div>
             )}
             <Button type="submit" className="w-full h-9" disabled={isLoading}>
