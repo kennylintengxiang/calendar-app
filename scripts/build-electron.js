@@ -186,6 +186,73 @@ if (!fs.existsSync(dbDir)) {
   console.log('  ✅ 创建 db 目录')
 }
 
+// ========================================================
+// 关键修复：为 Turbopack 的哈希模块名创建别名
+//
+// Next.js 16 的 Turbopack 构建会给外部包生成带哈希后缀的模块名，
+// 例如 @prisma/client-2c3a283f134fdcb6。
+// 在 standalone 模式下，Node.js require() 无法找到这些带哈希的包名。
+// 解决方法：在 node_modules 中创建对应的目录，作为真实包的别名。
+// ========================================================
+console.log('\n  🔍 扫描 Turbopack 哈希模块名...')
+const chunksDir = path.join(standaloneDir, '.next', 'server', 'chunks')
+if (fs.existsSync(chunksDir)) {
+  // 扫描所有 chunk 文件，查找带哈希后缀的外部模块引用
+  const chunkFiles = fs.readdirSync(chunksDir).filter(f => f.startsWith('[root-of-the-server]'))
+  const hashedModules = new Set()
+
+  for (const chunkFile of chunkFiles) {
+    const content = fs.readFileSync(path.join(chunksDir, chunkFile), 'utf-8')
+    // 匹配模式: e.x("@prisma/client-XXXX",()=>require("@prisma/client-XXXX"))
+    const matches = content.matchAll(/require\("(@prisma\/client-[a-f0-9]+)"\)/g)
+    for (const match of matches) {
+      hashedModules.add(match[1])
+    }
+  }
+
+  for (const hashedModule of hashedModules) {
+    console.log(`  📦 发现哈希模块: ${hashedModule}`)
+
+    // 提取原始包名（去掉哈希后缀）
+    const originalPackage = hashedModule.replace(/-[a-f0-9]{16}$/, '')
+    const hashedDir = path.join(standaloneDir, 'node_modules', hashedModule)
+    const originalDir = path.join(standaloneDir, 'node_modules', originalPackage)
+
+    if (!fs.existsSync(hashedDir)) {
+      if (fs.existsSync(originalDir)) {
+        // 创建别名目录，包含一个 index.js 指向原始包
+        fs.mkdirSync(hashedDir, { recursive: true })
+
+        // 创建 package.json（让 Node.js 能正确 resolve）
+        fs.writeFileSync(
+          path.join(hashedDir, 'package.json'),
+          JSON.stringify({
+            name: hashedModule,
+            version: '1.0.0',
+            main: 'index.js'
+          }, null, 2)
+        )
+
+        // 创建 index.js，re-export 原始包
+        fs.writeFileSync(
+          path.join(hashedDir, 'index.js'),
+          `// Turbopack 哈希模块别名 — 自动生成\nmodule.exports = require('${originalPackage}');\n`
+        )
+
+        console.log(`  ✅ 创建别名: ${hashedModule} → ${originalPackage}`)
+      } else {
+        console.log(`  ⚠️ 原始包 ${originalPackage} 不存在，无法创建别名`)
+      }
+    } else {
+      console.log(`  ⏭️ 别名目录已存在: ${hashedModule}`)
+    }
+  }
+
+  if (hashedModules.size === 0) {
+    console.log('  ✅ 未发现哈希模块（可能已通过 serverExternalPackages 解决）')
+  }
+}
+
 // Step 5: 用 electron-builder 打包
 let electronBuilderCmd = 'npx electron-builder'
 
