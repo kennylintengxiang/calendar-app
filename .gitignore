@@ -77,3 +77,6 @@ server.log
 
 # Bun lock file (Vercel 用 npm)
 bun.lock
+
+# Build artifacts (large files, not for git)
+*.tar.gz
