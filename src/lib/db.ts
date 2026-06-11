@@ -254,6 +254,9 @@ if (isSQLite) {
       .catch((err) => {
         console.error('[DB] SQLite 数据库初始化失败:', err)
         globalForPrisma.dbInitialized = false
+        // 关键修复：不要吞掉错误！让 dbReady 也 reject，
+        // 这样 API 路由 await dbReady 时能知道初始化失败
+        throw err
       })
   }
   dbReady = globalForPrisma.dbInitPromise

@@ -82,9 +82,43 @@ function initDatabase() {
   if (prismaEnginePath && fs.existsSync(prismaEnginePath)) {
     process.env.PRISMA_QUERY_ENGINE_BINARY = prismaEnginePath
     log(`Prisma 引擎路径: ${prismaEnginePath}`)
+    log(`Prisma 引擎文件大小: ${fs.statSync(prismaEnginePath).size} bytes`)
   } else {
     log(`⚠️ 未找到 Prisma 引擎: ${prismaEnginePath}`)
-    log(`   Prisma 将尝试自动查找引擎，可能失败`)
+
+    // 尝试在更多位置搜索引擎
+    const searchPaths = isDev ? [
+      path.join(__dirname, '..', 'node_modules', '.prisma', 'client'),
+    ] : [
+      path.join(process.resourcesPath, 'standalone', 'node_modules', '.prisma', 'client'),
+      path.join(process.resourcesPath, 'standalone', 'node_modules', '@prisma', 'client'),
+    ]
+
+    for (const searchDir of searchPaths) {
+      log(`搜索目录: ${searchDir}`)
+      try {
+        if (fs.existsSync(searchDir)) {
+          const files = fs.readdirSync(searchDir).filter(f => f.startsWith('query-engine') || f.startsWith('libquery_engine'))
+          log(`  找到引擎文件: ${files.join(', ')}`)
+          // 如果找到任何 query-engine 文件，使用第一个
+          const winEngine = files.find(f => f.includes('windows'))
+          if (winEngine) {
+            prismaEnginePath = path.join(searchDir, winEngine)
+            process.env.PRISMA_QUERY_ENGINE_BINARY = prismaEnginePath
+            log(`✅ 使用找到的引擎: ${prismaEnginePath}`)
+            break
+          }
+        } else {
+          log(`  目录不存在`)
+        }
+      } catch (e) {
+        log(`  搜索失败: ${e.message}`)
+      }
+    }
+
+    if (!process.env.PRISMA_QUERY_ENGINE_BINARY) {
+      log(`❌ 无法找到任何可用的 Prisma 引擎！数据库功能将无法使用。`)
+    }
   }
 
   log('数据库表结构将在 Next.js 服务器启动时自动创建')

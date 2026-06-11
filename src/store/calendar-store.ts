@@ -1159,6 +1159,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
 
   setup: async (username, password, displayName) => {
     try {
+      console.log('[Store] setup() 开始调用 API...')
       const res = await fetch('/api/auth/setup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1177,10 +1178,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
             await get().initForUser(authUsers[0].id)
           }
         }
+        console.log('[Store] setup() 成功')
         return account
       }
-      // 读取原始响应文本，无论是否为有效 JSON
+      // API 返回了非 2xx 响应，读取错误详情
       const rawText = await res.text().catch(() => '')
+      console.error(`[Store] setup() API 返回 ${res.status}: ${rawText.substring(0, 500)}`)
       let errorMsg = ''
       try {
         const parsed = JSON.parse(rawText)
@@ -1191,6 +1194,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       }
       throw new Error(errorMsg || `请求失败 (HTTP ${res.status})`)
     } catch (e) {
+      console.error('[Store] setup() 捕获错误:', e)
       if (e instanceof Error) throw e
       throw new Error('设置失败，请稍后重试')
     }
