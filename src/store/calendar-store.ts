@@ -1179,9 +1179,12 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
         }
         return account
       }
-      return null
-    } catch {
-      return null
+      // 返回 API 返回的具体错误信息
+      const errorData = await res.json().catch(() => ({ error: '设置失败' }))
+      throw new Error(errorData.error || '设置失败')
+    } catch (e) {
+      if (e instanceof Error) throw e
+      throw new Error('设置失败，请稍后重试')
     }
   },
 

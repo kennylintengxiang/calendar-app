@@ -56,6 +56,11 @@ console.log('========================================')
 
 if (skipBuild) {
   console.log('\n⏭️  跳过 Step 1-3（使用预构建产物）')
+  // 即使跳过构建，也需要在当前平台重新生成 Prisma Client
+  // 因为预构建产物可能在其他平台（如 Linux）上生成的引擎不兼容当前系统
+  console.log('\n📦 重新生成当前平台的 Prisma Client...')
+  runWithEnv('node scripts/select-schema.js', { DB_PROVIDER: 'sqlite' })
+  run('npx prisma generate')
 } else {
   // Step 1: 选择 SQLite schema
   console.log('\n📦 Step 1/5: 选择 SQLite schema...')

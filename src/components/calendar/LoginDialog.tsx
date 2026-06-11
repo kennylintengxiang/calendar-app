@@ -65,10 +65,10 @@ export function LoginDialog() {
         toast({ title: '设置成功', description: '已创建管理员账号' })
         resetForm()
       } else {
-        setError('设置失败')
+        setError('设置失败，请检查网络或查看日志')
       }
-    } catch {
-      setError('设置失败，请稍后重试')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '设置失败，请稍后重试')
     } finally {
       setIsLoading(false)
     }

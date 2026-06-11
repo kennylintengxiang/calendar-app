@@ -116,8 +116,9 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     console.error('Setup error:', error);
+    const message = error instanceof Error ? error.message : '未知错误';
     return NextResponse.json(
-      { error: '初始化失败，请稍后重试' },
+      { error: `初始化失败: ${message}` },
       { status: 500 }
     );
   }

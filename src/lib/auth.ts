@@ -56,11 +56,14 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 
 /** 获取 session cookie 配置 */
 export function getSessionCookieConfig() {
+  // Electron 环境下使用 HTTP（非 HTTPS），不能设置 secure=true
+  // 否则浏览器会拒绝保存 cookie，导致 session 失效
+  const isElectron = process.env.ELECTRON === 'true'
   return {
     name: SESSION_COOKIE_NAME,
     maxAge: SESSION_MAX_AGE,
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: !isElectron && process.env.NODE_ENV === 'production',
     sameSite: 'lax' as const,
     path: '/',
   }
