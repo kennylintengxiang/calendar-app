@@ -68,6 +68,7 @@ export function LoginDialog() {
         setError('设置失败，请检查网络或查看日志')
       }
     } catch (e) {
+      // 显示后端返回的具体错误信息
       setError(e instanceof Error ? e.message : '设置失败，请稍后重试')
     } finally {
       setIsLoading(false)

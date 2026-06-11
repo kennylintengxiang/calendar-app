@@ -61,10 +61,13 @@ export function SetupPage({ onSetupSuccess }: SetupPageProps) {
       if (res.ok) {
         onSetupSuccess(data.account)
       } else {
-        setError(data.error || '初始化失败')
+        // 显示后端返回的具体错误信息，方便排查
+        const errMsg = data.error || '初始化失败'
+        const detail = data.details ? ` (${data.details.substring(0, 200)})` : ''
+        setError(errMsg + detail)
       }
-    } catch {
-      setError('网络错误，请稍后重试')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '网络错误，请稍后重试')
     } finally {
       setIsLoading(false)
     }

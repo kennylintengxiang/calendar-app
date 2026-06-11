@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
+import { db, dbReady } from '@/lib/db';
 import { hashPassword, createSessionToken, getSessionCookieConfig } from '@/lib/auth';
 
 /**
@@ -11,8 +11,11 @@ import { hashPassword, createSessionToken, getSessionCookieConfig } from '@/lib/
  */
 export async function POST(request: NextRequest) {
   try {
+    // 等待数据库初始化完成（确保表结构已创建）
+    await dbReady
+
     // 检查是否已有账号
-    const accountCount = await db.account.count();
+    const accountCount = await db.account.count()
     if (accountCount > 0) {
       return NextResponse.json(
         { error: '已存在管理员账号，请直接登录' },
@@ -116,9 +119,14 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     console.error('Setup error:', error);
+    // 返回详细的错误信息，方便排查问题
     const message = error instanceof Error ? error.message : '未知错误';
+    const stack = error instanceof Error ? error.stack : undefined;
     return NextResponse.json(
-      { error: `初始化失败: ${message}` },
+      { 
+        error: `初始化失败: ${message}`,
+        details: stack || String(error),
+      },
       { status: 500 }
     );
   }

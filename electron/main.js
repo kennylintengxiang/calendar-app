@@ -42,13 +42,15 @@ function log(msg) {
 /**
  * 初始化数据库
  *
- * 已改为在 Next.js 服务器进程内自动完成（db.ts 中使用 CREATE TABLE IF NOT EXISTS）。
- * 这里只做日志提示，不再依赖 prisma db push（在 Electron 环境下不可靠）。
+ * 数据库表结构已改为在 Next.js 服务器进程内自动创建（db.ts 中使用 CREATE TABLE IF NOT EXISTS）。
+ * 这里只做日志提示和目录创建。
+ *
+ * 同时设置 PRISMA_QUERY_ENGINE_BINARY 环境变量，
+ * 确保 Prisma 能找到正确的引擎二进制文件。
  */
 function initDatabase() {
   const dbPath = getDatabasePath()
   log(`数据库路径: ${dbPath}`)
-  log('数据库表结构将在 Next.js 服务器启动时自动创建（无需 prisma db push）')
 
   // 确保数据库目录存在
   const dbDir = path.dirname(dbPath)
@@ -57,6 +59,35 @@ function initDatabase() {
     log(`创建数据库目录: ${dbDir}`)
   }
 
+  // 设置 Prisma 引擎路径（让 Prisma 知道去哪里找 query engine 二进制文件）
+  const isDev = !app.isPackaged
+  let prismaEnginePath
+
+  if (isDev) {
+    // 开发模式：使用项目本地的引擎
+    prismaEnginePath = path.join(__dirname, '..', 'node_modules', '.prisma', 'client', 'query-engine-windows.exe')
+    if (!fs.existsSync(prismaEnginePath)) {
+      // Linux/macOS 开发环境
+      prismaEnginePath = path.join(__dirname, '..', 'node_modules', '.prisma', 'client', 'query-engine-debian-openssl-3.0.x')
+    }
+    if (!fs.existsSync(prismaEnginePath)) {
+      prismaEnginePath = path.join(__dirname, '..', 'node_modules', '.prisma', 'client', 'query-engine-linux-musl')
+    }
+  } else {
+    // 生产模式：使用 standalone 目录下的引擎
+    const serverPath = path.join(process.resourcesPath, 'standalone')
+    prismaEnginePath = path.join(serverPath, 'node_modules', '.prisma', 'client', 'query-engine-windows.exe')
+  }
+
+  if (prismaEnginePath && fs.existsSync(prismaEnginePath)) {
+    process.env.PRISMA_QUERY_ENGINE_BINARY = prismaEnginePath
+    log(`Prisma 引擎路径: ${prismaEnginePath}`)
+  } else {
+    log(`⚠️ 未找到 Prisma 引擎: ${prismaEnginePath}`)
+    log(`   Prisma 将尝试自动查找引擎，可能失败`)
+  }
+
+  log('数据库表结构将在 Next.js 服务器启动时自动创建')
   return Promise.resolve(true)
 }
 
@@ -86,6 +117,8 @@ function startServer() {
           ...process.env,
           DATABASE_URL: `file:${dbPath}`,
           ELECTRON: 'true',
+          // 确保 Prisma 引擎路径传递给子进程
+          PRISMA_QUERY_ENGINE_BINARY: process.env.PRISMA_QUERY_ENGINE_BINARY || '',
         },
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: true,
@@ -126,6 +159,8 @@ function startServer() {
         HOSTNAME: '127.0.0.1',
         DATABASE_URL: `file:${dbPath}`,
         ELECTRON: 'true',
+        // 确保 Prisma 引擎路径传递给子进程
+        PRISMA_QUERY_ENGINE_BINARY: process.env.PRISMA_QUERY_ENGINE_BINARY || '',
       }
 
       log(`启动服务器，环境变量: PORT=${SERVER_PORT}, DATABASE_URL=file:${dbPath}`)

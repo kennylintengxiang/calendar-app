@@ -12,7 +12,7 @@ import fs from 'fs'
  * SQLite 自动初始化：
  * - 首次启动时数据库文件不存在或为空，Prisma 只创建空的 .db 文件
  * - 不会自动创建表结构！所以这里用 CREATE TABLE IF NOT EXISTS 自动建表
- * - 这比依赖 prisma db push 更可靠（Electron 环境下 prisma CLI 可能无法运行）
+ * - 使用同步等待，确保表创建完成后才允许数据库查询
  *
  * Supabase 兼容性：
  * - Supabase Transaction pooler (pgbouncer) 不支持 prepared statements
@@ -188,15 +188,11 @@ CREATE TABLE IF NOT EXISTS CalendarMembership (
  * 确保 SQLite 数据库表结构存在
  *
  * 检查 Account 表是否存在，如果不存在则执行所有建表 SQL。
- * 使用 Prisma 的 $executeRawUnsafe 执行原始 SQL。
- * 这比依赖 prisma db push 更可靠，因为：
- * 1. 不需要 Prisma CLI（Electron 环境下可能无法运行）
- * 2. 在 Next.js 服务器进程内执行，环境完全正确
- * 3. CREATE TABLE IF NOT EXISTS 安全可重复
+ * 这是同步等待的——表创建完成后才允许后续数据库操作。
  */
-async function ensureSqliteTablesExist(prisma: PrismaClient) {
+async function ensureSqliteTablesExist(prisma: PrismaClient): Promise<void> {
   try {
-    // 检查 Account 表是否存在（Account 是第一个表，如果它不存在说明数据库是空的）
+    // 检查 Account 表是否存在
     const result = await prisma.$queryRaw<Array<{ name: string }>>`
       SELECT name FROM sqlite_master WHERE type='table' AND name='Account'
     `
@@ -208,7 +204,7 @@ async function ensureSqliteTablesExist(prisma: PrismaClient) {
 
     console.log('[DB] SQLite 数据库为空，正在创建表结构...')
 
-    // 执行建表 SQL（逐条执行，避免一次性执行多条 SQL 的问题）
+    // 执行建表 SQL
     const statements = SQLITE_CREATE_TABLES_SQL
       .split(';')
       .map(s => s.trim())
@@ -221,12 +217,14 @@ async function ensureSqliteTablesExist(prisma: PrismaClient) {
     console.log('[DB] ✅ SQLite 表结构创建完成')
   } catch (error) {
     console.error('[DB] ⚠️ SQLite 表结构初始化失败:', error)
-    // 不抛出错误，让后续操作可能在已有表的情况下继续工作
+    throw error  // 抛出错误，让调用者知道初始化失败
   }
 }
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined
+  dbInitialized: boolean | undefined
+  dbInitPromise: Promise<void> | undefined
 }
 
 const prismaClientOptions = getPrismaClientOptions()
@@ -235,20 +233,33 @@ export const db = globalForPrisma.prisma || new PrismaClient(prismaClientOptions
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = db
 
 /**
- * SQLite 数据库自动初始化
+ * SQLite 数据库自动初始化（同步等待版本）
  *
  * 只在 SQLite 模式下执行。
- * 使用 Prisma 的 $queryRaw 检查表是否存在，不存在则创建。
- * 这是异步操作，在模块加载后立即启动。
+ * 使用 Promise 确保表创建完成后才允许 API 请求操作数据库。
+ * 其他模块可以通过 `await dbReady` 等待初始化完成。
  */
 const dbUrl = process.env.DATABASE_URL || ''
-if (dbUrl.startsWith('file:') || !dbUrl) {
-  // 启动表结构初始化（不阻塞模块导出）
-  ensureSqliteTablesExist(db)
-    .then(() => {
-      console.log('[DB] SQLite 数据库初始化检查完成')
-    })
-    .catch((err) => {
-      console.error('[DB] SQLite 数据库初始化失败:', err)
-    })
+const isSQLite = dbUrl.startsWith('file:') || !dbUrl
+
+let dbReady: Promise<void>
+
+if (isSQLite) {
+  if (!globalForPrisma.dbInitPromise) {
+    globalForPrisma.dbInitPromise = ensureSqliteTablesExist(db)
+      .then(() => {
+        globalForPrisma.dbInitialized = true
+        console.log('[DB] SQLite 数据库初始化检查完成')
+      })
+      .catch((err) => {
+        console.error('[DB] SQLite 数据库初始化失败:', err)
+        globalForPrisma.dbInitialized = false
+      })
+  }
+  dbReady = globalForPrisma.dbInitPromise
+} else {
+  // PostgreSQL 不需要自动建表（由 Supabase 管理）
+  dbReady = Promise.resolve()
 }
+
+export { dbReady, isSQLite }
