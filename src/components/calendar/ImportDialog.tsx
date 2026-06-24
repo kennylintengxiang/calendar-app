@@ -23,6 +23,14 @@ interface ImportResult {
   entitiesMatched: number
   entitiesCreated: number
   errors: string[]
+  eventLog?: Array<{
+    title: string
+    startDate: string
+    eventTypeName?: string
+    eventTypeId: string | null
+    status: 'imported' | 'skipped' | 'error'
+    reason?: string
+  }>
 }
 
 export function ImportDialog() {
@@ -289,6 +297,39 @@ export function ImportDialog() {
                     </div>
                   )}
                 </div>
+                {/* 详细事件日志：显示每个事件的处理情况，方便排查问题 */}
+                {result.eventLog && result.eventLog.length > 0 && (
+                  <div className="mt-3 border-t pt-2">
+                    <p className="text-xs font-medium mb-1">📋 事件处理详情:</p>
+                    <div className="max-h-48 overflow-y-auto text-[10px] space-y-0.5 ml-6">
+                      {result.eventLog.map((log, i) => (
+                        <div key={i} className={cn(
+                          'flex items-start gap-1',
+                          log.status === 'imported' && 'text-green-700',
+                          log.status === 'skipped' && 'text-amber-700',
+                          log.status === 'error' && 'text-red-700'
+                        )}>
+                          <span>
+                            {log.status === 'imported' ? '✅' : log.status === 'skipped' ? '⏭️' : '❌'}
+                          </span>
+                          <span className="flex-1">
+                            <span className="font-medium">{log.title}</span>
+                            <span className="opacity-70"> | {log.startDate}</span>
+                            {log.eventTypeName && (
+                              <span className="opacity-70"> | 类型: {log.eventTypeName}</span>
+                            )}
+                            {!log.eventTypeId && log.status === 'imported' && (
+                              <span className="text-red-600 font-medium"> ⚠️ 无事件类型!</span>
+                            )}
+                            {log.reason && (
+                              <span className="opacity-70"> | {log.reason}</span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

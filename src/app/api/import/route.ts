@@ -110,6 +110,15 @@ export async function POST(request: NextRequest) {
       entitiesMatched: 0,
       entitiesCreated: 0,
       errors: [] as string[],
+      // 调试日志：记录每个事件的处理详情，方便排查问题
+      eventLog: [] as Array<{
+        title: string;
+        startDate: string;
+        eventTypeName?: string;
+        eventTypeId: string | null;
+        status: 'imported' | 'skipped' | 'error';
+        reason?: string;
+      }>,
     };
 
     // Get existing event types for this user
@@ -126,6 +135,14 @@ export async function POST(request: NextRequest) {
       try {
         if (!eventData.title || !eventData.startDate) {
           results.skipped++;
+          results.eventLog.push({
+            title: eventData.title || '(空)',
+            startDate: eventData.startDate || '(空)',
+            eventTypeName: eventData.eventTypeName,
+            eventTypeId: null,
+            status: 'skipped',
+            reason: '缺少标题或开始日期',
+          });
           continue;
         }
 
@@ -134,6 +151,14 @@ export async function POST(request: NextRequest) {
         if (isNaN(startDate.getTime())) {
           results.skipped++;
           results.errors.push(`Invalid start date for: ${eventData.title}`);
+          results.eventLog.push({
+            title: eventData.title,
+            startDate: eventData.startDate,
+            eventTypeName: eventData.eventTypeName,
+            eventTypeId: null,
+            status: 'skipped',
+            reason: '开始日期格式无效',
+          });
           continue;
         }
 
@@ -142,6 +167,14 @@ export async function POST(request: NextRequest) {
         if (eventData.endDate && endDate && isNaN(endDate.getTime())) {
           results.skipped++;
           results.errors.push(`Invalid end date for: ${eventData.title}`);
+          results.eventLog.push({
+            title: eventData.title,
+            startDate: eventData.startDate,
+            eventTypeName: eventData.eventTypeName,
+            eventTypeId: null,
+            status: 'skipped',
+            reason: '结束日期格式无效',
+          });
           continue;
         }
 
@@ -178,6 +211,9 @@ export async function POST(request: NextRequest) {
             results.eventTypesCreated++;
           }
         }
+
+        // 调试日志：记录事件类型匹配结果
+        console.log(`[Import] 事件 "${eventData.title}" (${eventData.startDate}): eventTypeName="${eventData.eventTypeName || '(无)'}", eventTypeId=${eventTypeId || 'null'}`);
 
         // Match or create entities, collect entity IDs
         const entityIds: string[] = [];
@@ -221,6 +257,14 @@ export async function POST(request: NextRequest) {
 
         if (existingEvent) {
           results.skipped++;
+          results.eventLog.push({
+            title: eventData.title,
+            startDate: eventData.startDate,
+            eventTypeName: eventData.eventTypeName,
+            eventTypeId,
+            status: 'skipped',
+            reason: '重复事件（标题+日期已存在）',
+          });
           continue;
         }
 
@@ -242,9 +286,24 @@ export async function POST(request: NextRequest) {
         });
 
         results.imported++;
+        results.eventLog.push({
+          title: eventData.title,
+          startDate: eventData.startDate,
+          eventTypeName: eventData.eventTypeName,
+          eventTypeId,
+          status: 'imported',
+        });
       } catch (eventError) {
         results.errors.push(`Failed to import: ${eventData.title}`);
         console.error('Error importing event:', eventError);
+        results.eventLog.push({
+          title: eventData.title,
+          startDate: eventData.startDate,
+          eventTypeName: eventData.eventTypeName,
+          eventTypeId: null,
+          status: 'error',
+          reason: eventError instanceof Error ? eventError.message : '未知错误',
+        });
       }
     }
 

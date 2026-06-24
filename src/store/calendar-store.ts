@@ -243,7 +243,7 @@ interface CalendarState {
   logout: () => Promise<void>
 
   // Import calendar
-  importCalendar: (userId: string, fileType: 'ics' | 'json' | 'csv' | 'excel', content: string) => Promise<{ imported: number; skipped: number; eventTypesMatched: number; eventTypesCreated: number; entitiesMatched: number; entitiesCreated: number; errors: string[] }>
+  importCalendar: (userId: string, fileType: 'ics' | 'json' | 'csv' | 'excel', content: string) => Promise<{ imported: number; skipped: number; eventTypesMatched: number; eventTypesCreated: number; entitiesMatched: number; entitiesCreated: number; errors: string[]; eventLog?: Array<{ title: string; startDate: string; eventTypeName?: string; eventTypeId: string | null; status: 'imported' | 'skipped' | 'error'; reason?: string }> }>
 
   // Reorder event types
   reorderEventTypes: (items: Array<{ id: string; sortOrder: number }>) => Promise<void>
