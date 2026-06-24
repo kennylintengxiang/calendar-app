@@ -411,8 +411,9 @@ function parseExcel(content: string): ParsedEvent[] {
 /**
  * Split a cell that may contain multiple dates separated by separator
  * Also handles Excel date serial numbers within the list.
+ * `separator` defaults to /[,;]/ so JSON (comma or semicolon) works out of the box.
  */
-function splitDates(value: string, separator: string): string[] {
+function splitDates(value: string, separator: string | RegExp = /[,;]/): string[] {
   if (!value) return [];
   return value
     .split(separator)
@@ -422,12 +423,29 @@ function splitDates(value: string, separator: string): string[] {
 }
 
 /**
- * Parse a single date string. Handles Excel date serial numbers.
+ * Parse a single date string and NORMALIZE it to ISO `YYYY-MM-DD` format.
+ *
+ * 为什么需要归一化？
+ * - `new Date('2026/7/1')`  (斜杠格式) → V8 按【本地时区】解析 → 上海 UTC+8 → 2026-06-30T16:00:00Z
+ * - `new Date('2026-07-01')` (ISO 日期) → V8 按【UTC】解析     → 2026-07-01T00:00:00Z
+ * 前端用 `.slice(0,10)` 取日期（基于 UTC），所以斜杠格式的日期会被往前偏移一天（显示成前一天）。
+ * 统一归一化为 `YYYY-MM-DD` 后，`new Date()` 一律按 UTC 午夜解析，存取一致，不再偏移。
+ *
+ * 支持：
+ * - Excel 日期序列号（数字）
+ * - ISO 格式：2026-07-01 / 2026-07-01T00:00:00 / 2026-07-01 08:00:00
+ * - 斜杠格式：2026/7/1 / 2026/07/01
+ * - 中文格式：2026年7月1日
+ * - 点号格式：2026.7.1
+ * - 其他：回退到 Date 解析，再用 UTC 方法取年月日
  */
 function parseDate(dateStr: string): string {
   if (!dateStr) return '';
-  // If it's a number, it might be an Excel date serial number
-  const num = Number(dateStr);
+  const trimmed = dateStr.trim();
+  if (!trimmed) return '';
+
+  // 1) Excel 日期序列号（数字，通常在 10000~100000 之间）
+  const num = Number(trimmed);
   if (!isNaN(num) && num > 10000 && num < 100000) {
     const jsDate = XLSX.SSF.parse_date_code(num);
     if (jsDate) {
@@ -437,7 +455,46 @@ function parseDate(dateStr: string): string {
       return `${y}-${m}-${d}`;
     }
   }
-  return dateStr;
+
+  // 2) ISO 格式：YYYY-MM-DD 或 YYYY-MM-DDTHH:mm:ss ...
+  const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // 3) 斜杠格式：YYYY/M/D（年份在前，最常见于中文 Excel）
+  const slashMatch = trimmed.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+  if (slashMatch) {
+    const [, y, m, d] = slashMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // 4) 点号格式：YYYY.M.D
+  const dotMatch = trimmed.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})/);
+  if (dotMatch) {
+    const [, y, m, d] = dotMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // 5) 中文格式：YYYY年M月D日
+  const cnMatch = trimmed.match(/^(\d{4})年(\d{1,2})月(\d{1,2})日/);
+  if (cnMatch) {
+    const [, y, m, d] = cnMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+
+  // 6) 回退：交给 Date 解析，再用 UTC 方法取年月日（保证和存储/前端一致）
+  const d = new Date(trimmed);
+  if (!isNaN(d.getTime())) {
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
+  // 解析失败，原样返回
+  return trimmed;
 }
 
 /**
