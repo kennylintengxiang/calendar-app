@@ -243,7 +243,7 @@ interface CalendarState {
   logout: () => Promise<void>
 
   // Import calendar
-  importCalendar: (userId: string, fileType: 'ics' | 'json' | 'csv' | 'excel', content: string) => Promise<{ imported: number; skipped: number; eventTypesMatched: number; eventTypesCreated: number; errors: string[] }>
+  importCalendar: (userId: string, fileType: 'ics' | 'json' | 'csv' | 'excel', content: string) => Promise<{ imported: number; skipped: number; eventTypesMatched: number; eventTypesCreated: number; entitiesMatched: number; entitiesCreated: number; errors: string[] }>
 
   // Reorder event types
   reorderEventTypes: (items: Array<{ id: string; sortOrder: number }>) => Promise<void>
@@ -1226,6 +1226,7 @@ export const useCalendarStore = create<CalendarState>((set, get) => ({
       await Promise.all([
         get().fetchEvents(),
         get().fetchEventTypes(),
+        get().fetchEntities(),
       ])
       return result
     }

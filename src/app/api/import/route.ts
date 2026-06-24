@@ -16,7 +16,8 @@ import * as XLSX from 'xlsx';
  *       "startDate": "2025-01-15",           // YYYY-MM-DD or ISO 8601
  *       "endDate": "2025-01-16",             // Optional
  *       "allDay": true,                       // Optional, default true
- *       "eventTypeName": "会议"               // Optional, matches by name
+ *       "eventTypeName": "会议",              // Optional, matches by name
+ *       "entityNames": ["主体A", "主体B"]      // Optional, matches/creates entities by name
  *     }
  *   ]
  * }
@@ -24,11 +25,28 @@ import * as XLSX from 'xlsx';
  * ICS format: Standard iCalendar (.ics) file content
  *
  * CSV format: Comma-separated values with header row
- *   title,startDate,endDate,allDay,eventTypeName,description
- *   "会议","2025-01-15","2025-01-16",true,"工作","讨论项目"
+ *   title,startDate,endDate,allDay,eventTypeName,description,entityNames
+ *   "会议","2025-01-15","2025-01-16",true,"工作","讨论项目","主体A;主体B"
+ *   - Multiple dates in startDate: separated by SEMICOLON ";"
+ *   - Multiple end dates in endDate: separated by SEMICOLON ";" (paired with start dates by order)
+ *   - Multiple entities in entityNames: separated by SEMICOLON ";"
  *
  * Excel format: .xlsx file with same columns as CSV (base64 encoded content)
+ *   - Multiple dates in startDate: separated by COMMA ","
+ *   - Multiple end dates in endDate: separated by COMMA "," (paired with start dates by order)
+ *   - Multiple entities in entityNames: separated by COMMA ","
  */
+
+interface ParsedEvent {
+  title: string;
+  description?: string;
+  startDate: string;
+  endDate?: string;
+  allDay?: boolean;
+  eventTypeName?: string;
+  entityNames?: string[];
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -65,15 +83,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse events from file content
-    let parsedEvents: Array<{
-      title: string;
-      description?: string;
-      startDate: string;
-      endDate?: string;
-      allDay?: boolean;
-      eventTypeName?: string;
-    }>;
-
+    let parsedEvents: ParsedEvent[];
     if (fileType === 'json') {
       parsedEvents = parseJSON(content);
     } else if (fileType === 'csv') {
@@ -91,17 +101,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Process events: match/create event types, create events
+    // Process events: match/create event types & entities, create events
     const results = {
       imported: 0,
       skipped: 0,
       eventTypesMatched: 0,
       eventTypesCreated: 0,
+      entitiesMatched: 0,
+      entitiesCreated: 0,
       errors: [] as string[],
     };
 
     // Get existing event types for this user
     const existingEventTypes = await db.eventType.findMany({
+      where: { userId },
+    });
+
+    // Get existing entities for this user (for matching)
+    const existingEntities = await db.entity.findMany({
       where: { userId },
     });
 
@@ -112,7 +129,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Parse dates
+        // Parse start date
         const startDate = new Date(eventData.startDate);
         if (isNaN(startDate.getTime())) {
           results.skipped++;
@@ -120,6 +137,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        // Parse end date
         const endDate = eventData.endDate ? new Date(eventData.endDate) : null;
         if (eventData.endDate && endDate && isNaN(endDate.getTime())) {
           results.skipped++;
@@ -161,6 +179,37 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Match or create entities, collect entity IDs
+        const entityIds: string[] = [];
+        if (eventData.entityNames && eventData.entityNames.length > 0) {
+          for (const entityName of eventData.entityNames) {
+            const trimmedName = entityName.trim();
+            if (!trimmedName) continue;
+
+            // Match existing entity by name (case-insensitive)
+            const existingEntity = existingEntities.find(
+              (e) => e.name.toLowerCase() === trimmedName.toLowerCase()
+            );
+
+            if (existingEntity) {
+              entityIds.push(existingEntity.id);
+              results.entitiesMatched++;
+            } else {
+              // Create new entity
+              const newEntity = await db.entity.create({
+                data: {
+                  name: trimmedName,
+                  userId,
+                  sortOrder: existingEntities.length,
+                },
+              });
+              existingEntities.push(newEntity);
+              entityIds.push(newEntity.id);
+              results.entitiesCreated++;
+            }
+          }
+        }
+
         // Check for duplicate event (same title + same start date + same user)
         const existingEvent = await db.calendarEvent.findFirst({
           where: {
@@ -175,7 +224,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Create the event
+        // Create the event with entity relations
         await db.calendarEvent.create({
           data: {
             title: eventData.title,
@@ -186,6 +235,9 @@ export async function POST(request: NextRequest) {
             eventTypeId,
             userId,
             createdById: userId,
+            eventEntities: entityIds.length > 0 ? {
+              create: entityIds.map((entityId) => ({ entityId }))
+            } : undefined,
           },
         });
 
@@ -209,14 +261,7 @@ export async function POST(request: NextRequest) {
 /**
  * Parse JSON format
  */
-function parseJSON(content: string): Array<{
-  title: string;
-  description?: string;
-  startDate: string;
-  endDate?: string;
-  allDay?: boolean;
-  eventTypeName?: string;
-}> {
+function parseJSON(content: string): ParsedEvent[] {
   try {
     const data = JSON.parse(content);
     const events = data.events || data;
@@ -225,14 +270,38 @@ function parseJSON(content: string): Array<{
       return [];
     }
 
-    return events.filter((e: Record<string, unknown>) => e.title && e.startDate).map((e: Record<string, unknown>) => ({
-      title: String(e.title),
-      description: e.description ? String(e.description) : undefined,
-      startDate: String(e.startDate),
-      endDate: e.endDate ? String(e.endDate) : undefined,
-      allDay: e.allDay !== undefined ? Boolean(e.allDay) : undefined,
-      eventTypeName: e.eventTypeName ? String(e.eventTypeName) : undefined,
-    }));
+    return events
+      .filter((e: Record<string, unknown>) => e.title && e.startDate)
+      .flatMap((e: Record<string, unknown>) => {
+        const base = {
+          title: String(e.title),
+          description: e.description ? String(e.description) : undefined,
+          allDay: e.allDay !== undefined ? Boolean(e.allDay) : undefined,
+          eventTypeName: e.eventTypeName ? String(e.eventTypeName) : undefined,
+        };
+        // entityNames can be an array or a string
+        let entityNames: string[] | undefined;
+        if (Array.isArray(e.entityNames)) {
+          entityNames = (e.entityNames as unknown[]).map((n) => String(n));
+        } else if (typeof e.entityNames === 'string' && e.entityNames) {
+          entityNames = (e.entityNames as string).split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+        } else if (e.entityName) {
+          entityNames = [String(e.entityName)];
+        }
+
+        // Expand multiple start dates (JSON uses comma or semicolon)
+        const startDateStr = String(e.startDate);
+        const endDateStr = e.endDate ? String(e.endDate) : '';
+        const startDates = splitDates(startDateStr);
+        const endDates = endDateStr ? splitDates(endDateStr) : [];
+
+        return startDates.map((sd, i) => ({
+          ...base,
+          startDate: sd,
+          endDate: endDates[i] || endDates[0] || undefined,
+          entityNames,
+        }));
+      });
   } catch {
     return [];
   }
@@ -240,17 +309,9 @@ function parseJSON(content: string): Array<{
 
 /**
  * Parse CSV format
- * Expected columns: title, startDate, endDate, allDay, eventTypeName, description
- * First row must be the header row
+ * Uses semicolon ";" as the separator for multiple dates / entities within a cell.
  */
-function parseCSV(content: string): Array<{
-  title: string;
-  description?: string;
-  startDate: string;
-  endDate?: string;
-  allDay?: boolean;
-  eventTypeName?: string;
-}> {
+function parseCSV(content: string): ParsedEvent[] {
   try {
     const workbook = XLSX.read(content, { type: 'string' });
     const sheetName = workbook.SheetNames[0];
@@ -259,7 +320,7 @@ function parseCSV(content: string): Array<{
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
     return rows
       .filter((row) => row.title || row.Title || row['标题'])
-      .map((row) => normalizeRow(row));
+      .flatMap((row) => normalizeRow(row, ';'));
   } catch (e) {
     console.error('Error parsing CSV:', e);
     return [];
@@ -268,20 +329,11 @@ function parseCSV(content: string): Array<{
 
 /**
  * Parse Excel (.xlsx) format
- * Content is expected to be base64 encoded
- * Expected columns: title, startDate, endDate, allDay, eventTypeName, description
- * First row must be the header row
+ * Content is expected to be base64 encoded.
+ * Uses comma "," as the separator for multiple dates / entities within a cell.
  */
-function parseExcel(content: string): Array<{
-  title: string;
-  description?: string;
-  startDate: string;
-  endDate?: string;
-  allDay?: boolean;
-  eventTypeName?: string;
-}> {
+function parseExcel(content: string): ParsedEvent[] {
   try {
-    // Content is base64 encoded
     const buffer = Buffer.from(content, 'base64');
     const workbook = XLSX.read(buffer, { type: 'buffer' });
     const sheetName = workbook.SheetNames[0];
@@ -290,7 +342,7 @@ function parseExcel(content: string): Array<{
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
     return rows
       .filter((row) => row.title || row.Title || row['标题'])
-      .map((row) => normalizeRow(row));
+      .flatMap((row) => normalizeRow(row, ','));
   } catch (e) {
     console.error('Error parsing Excel:', e);
     return [];
@@ -298,17 +350,43 @@ function parseExcel(content: string): Array<{
 }
 
 /**
- * Normalize a row from CSV/Excel to a standard event format
- * Supports both English and Chinese column names
+ * Split a cell that may contain multiple dates separated by separator
+ * Also handles Excel date serial numbers within the list.
  */
-function normalizeRow(row: Record<string, unknown>): {
-  title: string;
-  description?: string;
-  startDate: string;
-  endDate?: string;
-  allDay?: boolean;
-  eventTypeName?: string;
-} {
+function splitDates(value: string, separator: string): string[] {
+  if (!value) return [];
+  return value
+    .split(separator)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((d) => parseDate(d));
+}
+
+/**
+ * Parse a single date string. Handles Excel date serial numbers.
+ */
+function parseDate(dateStr: string): string {
+  if (!dateStr) return '';
+  // If it's a number, it might be an Excel date serial number
+  const num = Number(dateStr);
+  if (!isNaN(num) && num > 10000 && num < 100000) {
+    const jsDate = XLSX.SSF.parse_date_code(num);
+    if (jsDate) {
+      const y = jsDate.y;
+      const m = String(jsDate.m).padStart(2, '0');
+      const d = String(jsDate.d).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+  }
+  return dateStr;
+}
+
+/**
+ * Normalize a row from CSV/Excel to one or more event objects.
+ * Supports both English and Chinese column names.
+ * `separator` is used to split multiple values within a single cell.
+ */
+function normalizeRow(row: Record<string, unknown>, separator: string): ParsedEvent[] {
   const getVal = (...keys: string[]): unknown => {
     for (const key of keys) {
       if (row[key] !== undefined && row[key] !== null && row[key] !== '') return row[key];
@@ -317,9 +395,9 @@ function normalizeRow(row: Record<string, unknown>): {
   };
 
   const title = String(getVal('title', 'Title', '标题', '事件标题', '事件') || '');
-  const startDate = String(getVal('startDate', 'StartDate', 'start_date', '开始日期', '开始时间', '日期') || '');
-  const endDate = getVal('endDate', 'EndDate', 'end_date', '结束日期', '结束时间')
-    ? String(getVal('endDate', 'EndDate', 'end_date', '结束日期', '结束时间')) : undefined;
+  const startDateRaw = String(getVal('startDate', 'StartDate', 'start_date', '开始日期', '开始时间', '日期') || '');
+  const endDateRaw = getVal('endDate', 'EndDate', 'end_date', '结束日期', '结束时间')
+    ? String(getVal('endDate', 'EndDate', 'end_date', '结束日期', '结束时间')) : '';
   const allDayVal = getVal('allDay', 'AllDay', 'all_day', '全天');
   const allDay = allDayVal !== undefined
     ? String(allDayVal).toLowerCase() === 'true' || String(allDayVal) === '1'
@@ -329,58 +407,57 @@ function normalizeRow(row: Record<string, unknown>): {
   const description = getVal('description', 'Description', 'desc', '描述', '备注', '说明')
     ? String(getVal('description', 'Description', 'desc', '描述', '备注', '说明')) : undefined;
 
-  // Handle Excel date serial numbers
-  const parseDate = (dateStr: string): string => {
-    if (!dateStr) return '';
-    // If it's a number, it might be an Excel date serial number
-    const num = Number(dateStr);
-    if (!isNaN(num) && num > 10000 && num < 100000) {
-      // Excel date serial number - convert using XLSX
-      const jsDate = XLSX.SSF.parse_date_code(num);
-      if (jsDate) {
-        const y = jsDate.y;
-        const m = String(jsDate.m).padStart(2, '0');
-        const d = String(jsDate.d).padStart(2, '0');
-        return `${y}-${m}-${d}`;
-      }
-    }
-    return dateStr;
-  };
+  // Entity names: support multiple names within one cell, separated by `separator`
+  const entityRaw = getVal('entityNames', 'EntityNames', 'entity_names', 'entities', '主体', '主体名称', '实体', '关联主体');
+  let entityNames: string[] | undefined;
+  if (entityRaw) {
+    entityNames = String(entityRaw)
+      .split(separator)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (entityNames.length === 0) entityNames = undefined;
+  }
 
-  return {
+  // Expand multiple start dates
+  const startDates = splitDates(startDateRaw, separator);
+  const endDates = splitDates(endDateRaw, separator);
+
+  if (startDates.length === 0) {
+    return [{
+      title,
+      startDate: '',
+      endDate: undefined,
+      allDay,
+      eventTypeName,
+      description,
+      entityNames,
+    }];
+  }
+
+  // 方案 A + B 结合：
+  // - 如果 endDate 单元格里也有多个日期，按顺序一一对应（方案 B）
+  // - 如果 endDate 单元格里只写一个日期，所有事件共用这个结束日期
+  // - 如果 endDate 为空，则每个事件都是单日事件（方案 A）
+  return startDates.map((sd, i) => ({
     title,
-    startDate: parseDate(startDate),
-    endDate: endDate ? parseDate(endDate) : undefined,
+    startDate: sd,
+    endDate: endDates[i] || endDates[0] || undefined,
     allDay,
     eventTypeName,
     description,
-  };
+    entityNames,
+  }));
 }
 
 /**
  * Parse ICS (iCalendar) format
  */
-function parseICS(content: string): Array<{
-  title: string;
-  description?: string;
-  startDate: string;
-  endDate?: string;
-  allDay?: boolean;
-  eventTypeName?: string;
-}> {
-  const events: Array<{
-    title: string;
-    description?: string;
-    startDate: string;
-    endDate?: string;
-    allDay?: boolean;
-    eventTypeName?: string;
-  }> = [];
+function parseICS(content: string): ParsedEvent[] {
+  const events: ParsedEvent[] = [];
 
   // Unfold long lines (RFC 5545: lines can be folded with CRLF + whitespace)
   const unfolded = content.replace(/\r?\n[ \t]/g, '');
 
-  // Split into lines
   const lines = unfolded.split(/\r?\n/);
 
   let inEvent = false;
@@ -399,7 +476,6 @@ function parseICS(content: string): Array<{
     if (trimmed === 'END:VEVENT') {
       inEvent = false;
 
-      // Process the collected event
       const summary = currentEvent['SUMMARY'] || '';
       const dtstart = currentEvent['DTSTART'] || currentEvent['DTSTART;VALUE=DATE'] || '';
       const dtend = currentEvent['DTEND'] || currentEvent['DTEND;VALUE=DATE'] || '';
@@ -427,12 +503,10 @@ function parseICS(content: string): Array<{
     }
 
     if (inEvent) {
-      // Parse property
       const colonIdx = trimmed.indexOf(':');
       if (colonIdx > 0) {
         const key = trimmed.substring(0, colonIdx).trim();
         const value = trimmed.substring(colonIdx + 1).trim();
-        // Store both with and without parameters
         const baseKey = key.split(';')[0];
         currentEvent[baseKey] = value;
         currentEvent[key] = value;
@@ -445,19 +519,15 @@ function parseICS(content: string): Array<{
 
 /**
  * Parse ICS date format to ISO string
- * Handles: YYYYMMDD, YYYYMMDDTHHMMSS, YYYYMMDDTHHMMSSZ
  */
 function parseICSDate(dateStr: string): string | null {
   try {
-    // Remove any property prefix like "DTSTART;VALUE=DATE:"
     const cleanStr = dateStr.replace(/^.*:/, '');
 
-    // YYYYMMDD format (all-day)
     if (/^\d{8}$/.test(cleanStr)) {
       return `${cleanStr.slice(0, 4)}-${cleanStr.slice(4, 6)}-${cleanStr.slice(6, 8)}`;
     }
 
-    // YYYYMMDDTHHMMSSZ format (UTC)
     if (/^\d{8}T\d{6}Z$/.test(cleanStr)) {
       const year = cleanStr.slice(0, 4);
       const month = cleanStr.slice(4, 6);
@@ -468,7 +538,6 @@ function parseICSDate(dateStr: string): string | null {
       return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}Z`).toISOString();
     }
 
-    // YYYYMMDDTHHMMSS format (local)
     if (/^\d{8}T\d{6}$/.test(cleanStr)) {
       const year = cleanStr.slice(0, 4);
       const month = cleanStr.slice(4, 6);
@@ -479,7 +548,6 @@ function parseICSDate(dateStr: string): string | null {
       return new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}`).toISOString();
     }
 
-    // Try standard date parsing as fallback
     const d = new Date(cleanStr);
     if (!isNaN(d.getTime())) {
       return d.toISOString();

@@ -20,6 +20,8 @@ interface ImportResult {
   skipped: number
   eventTypesMatched: number
   eventTypesCreated: number
+  entitiesMatched: number
+  entitiesCreated: number
   errors: string[]
 }
 
@@ -93,7 +95,7 @@ export function ImportDialog() {
       if (importResult.imported > 0) {
         toast({
           title: '导入成功',
-          description: `成功导入 ${importResult.imported} 个事件${importResult.eventTypesCreated > 0 ? `，新建 ${importResult.eventTypesCreated} 个事件类型` : ''}`,
+          description: `成功导入 ${importResult.imported} 个事件${importResult.eventTypesCreated > 0 ? `，新建 ${importResult.eventTypesCreated} 个事件类型` : ''}${importResult.entitiesCreated > 0 ? `，新建 ${importResult.entitiesCreated} 个主体` : ''}`,
         })
       }
     } catch (error) {
@@ -173,12 +175,14 @@ export function ImportDialog() {
       "startDate": "2025-01-15",
       "endDate": "2025-01-16",
       "allDay": true,
-      "eventTypeName": "会议"
+      "eventTypeName": "会议",
+      "entityNames": ["主体A", "主体B"]
     }
   ]
 }`}</pre>
                     <p>• <code className="bg-background px-1 rounded">title</code> 和 <code className="bg-background px-1 rounded">startDate</code> 为必填</p>
                     <p>• <code className="bg-background px-1 rounded">eventTypeName</code> 会自动匹配已有类型，未匹配则新建</p>
+                    <p>• <code className="bg-background px-1 rounded">entityNames</code> 可选，会自动匹配已有主体，未匹配则新建</p>
                     <p>• 日期格式支持: YYYY-MM-DD 或 ISO 8601</p>
                   </>
                 ) : fileType === 'ics' ? (
@@ -192,24 +196,33 @@ export function ImportDialog() {
                 ) : fileType === 'csv' ? (
                   <>
                     <p className="font-medium text-foreground">CSV 格式要求</p>
-                    <pre className="bg-background rounded p-2 overflow-x-auto text-[10px] leading-relaxed">{`title,startDate,endDate,allDay,eventTypeName,description
-"会议","2025-01-15","2025-01-16",true,"工作","项目讨论"
-"培训","2025-01-20","",true,"学习","技术培训"`}</pre>
+                    <pre className="bg-background rounded p-2 overflow-x-auto text-[10px] leading-relaxed">{`title,startDate,endDate,allDay,eventTypeName,description,entityNames
+"会议","2025-01-15;2025-02-15","2025-01-16;2025-02-16",true,"工作","项目讨论","主体A;主体B"
+"培训","2025-01-20","",true,"学习","技术培训","主体A"`}</pre>
                     <p>• 第一行为表头，必填列: <code className="bg-background px-1 rounded">title</code>、<code className="bg-background px-1 rounded">startDate</code></p>
-                    <p>• 可选列: <code className="bg-background px-1 rounded">endDate</code>、<code className="bg-background px-1 rounded">allDay</code>、<code className="bg-background px-1 rounded">eventTypeName</code>、<code className="bg-background px-1 rounded">description</code></p>
-                    <p>• 也支持中文列名: 标题、开始日期、结束日期、全天、事件类型、描述</p>
+                    <p>• 可选列: <code className="bg-background px-1 rounded">endDate</code>、<code className="bg-background px-1 rounded">allDay</code>、<code className="bg-background px-1 rounded">eventTypeName</code>、<code className="bg-background px-1 rounded">description</code>、<code className="bg-background px-1 rounded">entityNames</code></p>
+                    <p>• 也支持中文列名: 标题、开始日期、结束日期、全天、事件类型、描述、主体</p>
                     <p>• 日期格式: YYYY-MM-DD 或 YYYY/MM/DD</p>
-                    <p>• <code className="bg-background px-1 rounded">eventTypeName</code> 会自动匹配已有类型，未匹配则新建</p>
+                    <p className="text-primary font-medium">• 多个日期用分号 <code className="bg-background px-1 rounded">;</code> 分隔，会自动创建多个事件</p>
+                    <p>• 结束日期同样支持分号分隔，按顺序与开始日期一一配对</p>
+                    <p>• <code className="bg-background px-1 rounded">eventTypeName</code> 和 <code className="bg-background px-1 rounded">entityNames</code> 会自动匹配已有项，未匹配则新建</p>
+                    <p>• <code className="bg-background px-1 rounded">entityNames</code> 多个主体用分号 <code className="bg-background px-1 rounded">;</code> 分隔</p>
                   </>
                 ) : (
                   <>
                     <p className="font-medium text-foreground">Excel 格式要求</p>
+                    <pre className="bg-background rounded p-2 overflow-x-auto text-[10px] leading-relaxed">{`title,startDate,endDate,allDay,eventTypeName,description,entityNames
+"会议","2025-01-15, 2025-02-15","2025-01-16, 2025-02-16",true,"工作","项目讨论","主体A,主体B"
+"培训","2025-01-20","",true,"学习","技术培训","主体A"`}</pre>
                     <p>• 支持 .xlsx 和 .xls 文件</p>
                     <p>• 第一行为表头，必填列: <code className="bg-background px-1 rounded">title</code>、<code className="bg-background px-1 rounded">startDate</code></p>
-                    <p>• 可选列: <code className="bg-background px-1 rounded">endDate</code>、<code className="bg-background px-1 rounded">allDay</code>、<code className="bg-background px-1 rounded">eventTypeName</code>、<code className="bg-background px-1 rounded">description</code></p>
-                    <p>• 也支持中文列名: 标题、开始日期、结束日期、全天、事件类型、描述</p>
+                    <p>• 可选列: <code className="bg-background px-1 rounded">endDate</code>、<code className="bg-background px-1 rounded">allDay</code>、<code className="bg-background px-1 rounded">eventTypeName</code>、<code className="bg-background px-1 rounded">description</code>、<code className="bg-background px-1 rounded">entityNames</code></p>
+                    <p>• 也支持中文列名: 标题、开始日期、结束日期、全天、事件类型、描述、主体</p>
                     <p>• 日期格式: YYYY-MM-DD 或 YYYY/MM/DD，也支持 Excel 日期格式</p>
-                    <p>• <code className="bg-background px-1 rounded">eventTypeName</code> 会自动匹配已有类型，未匹配则新建</p>
+                    <p className="text-primary font-medium">• 多个日期用逗号 <code className="bg-background px-1 rounded">,</code> 分隔，会自动创建多个事件</p>
+                    <p>• 结束日期同样支持逗号分隔，按顺序与开始日期一一配对</p>
+                    <p>• <code className="bg-background px-1 rounded">eventTypeName</code> 和 <code className="bg-background px-1 rounded">entityNames</code> 会自动匹配已有项，未匹配则新建</p>
+                    <p>• <code className="bg-background px-1 rounded">entityNames</code> 多个主体用逗号 <code className="bg-background px-1 rounded">,</code> 分隔</p>
                   </>
                 )}
               </div>
@@ -262,8 +275,10 @@ export function ImportDialog() {
                 <div className="text-xs space-y-0.5 ml-6">
                   <p>✅ 成功导入: {result.imported} 个事件</p>
                   {result.skipped > 0 && <p>⏭️ 跳过: {result.skipped} 个（重复或无效）</p>}
-                  {result.eventTypesMatched > 0 && <p>🔗 匹配已有类型: {result.eventTypesMatched} 个</p>}
+                  {result.eventTypesMatched > 0 && <p>🔗 匹配已有事件类型: {result.eventTypesMatched} 个</p>}
                   {result.eventTypesCreated > 0 && <p>🆕 新建事件类型: {result.eventTypesCreated} 个</p>}
+                  {result.entitiesMatched > 0 && <p>🔗 匹配已有主体: {result.entitiesMatched} 个</p>}
+                  {result.entitiesCreated > 0 && <p>🆕 新建主体: {result.entitiesCreated} 个</p>}
                   {result.errors.length > 0 && (
                     <div className="mt-1 text-red-600">
                       <p>❌ 错误:</p>
